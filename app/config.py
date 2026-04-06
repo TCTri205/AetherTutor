@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
     
     # Model Selection
-    DEFAULT_LLM_MODEL: str = "gpt-4-turbo"
+    DEFAULT_LLM_MODEL: str = "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
     DEFAULT_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

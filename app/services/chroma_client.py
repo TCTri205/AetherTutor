@@ -16,5 +16,12 @@ class ChromaClient:
             metadata=metadata or {"hnsw:space": "cosine"}
         )
 
+    @property
+    def chunks_collection(self):
+        return self.get_or_create_collection("aethertutor_chunks")
+
+    @property
+    def entities_collection(self):
+        return self.get_or_create_collection("aethertutor_entities")
+
 chroma_client = ChromaClient()
- Maryland

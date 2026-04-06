@@ -1,8 +1,8 @@
 # MVP Implementation Plan với LightRAG
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 5, 2026
-> **Status:** Active (MVP Phase)
+> **Last Updated:** April 6, 2026
+> **Status:** Active (MVP Phase - Phase 1 & 2 Complete)
 
 ---
 
@@ -127,7 +127,7 @@ Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-te
 - [x] Setup FastAPI project structure.
 - [x] **Local Environment Setup**:
   - Tạo Python venv: `python -m venv venv`.
-  - Cài đặt dependencies (Windows Powershell): `.\venv\Scripts\Activate.ps1` -> `pip install -r requirements.txt`.
+  - Cài đặt dependencies (Windows Powershell): `.\venv\Scripts\Activate.ps1` -> `pip install -r requirements.txt`. (Đã bổ sung tiktoken, asyncpg).
 - [x] **Docker Infrastructure Readiness**:
   - Chạy các base services: `docker compose up -d db redis chromadb`.
   - Healthcheck các services từ bên ngoài container (Host).
@@ -135,8 +135,9 @@ Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-te
   - Hoàn thiện `app/database.py` hỗ trợ async connection.
   - Setup Alembic: `alembic init alembic`.
   - Migration đầu tiên: `alembic revision --autogenerate -m "initial"`.
+  - Fix Alembic `env.py` trỏ đúng `app.models`.
 - [x] **MCP (Model Context Protocol)**:
-  - Khởi tạo layer MCP cơ bản phục vụ cho việc truyền tải context giàu tri thức.
+  - Khởi tạo layer MCP cơ bản phục vụ cho việc truyền tải context. (Sẵn sàng mở rộng).
 
 **Deliverables:**
 - ✅ Môi trường venv hoạt động tốt.
@@ -147,17 +148,18 @@ Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-te
 
 ---
 
-### Phase 2: LightRAG Core (Week 3-4)
+**Phase 2: LightRAG Core (Week 3-4) - COMPLETED**
 
 **Mục tiêu:** Implement được LightRAG pipeline: Entity extraction → Graph construction → Retrieval.
 
 Chi tiết mã nguồn và logic thực thi: [LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết](LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết)
 
 **Deliverables:**
-- ✅ Entity extraction working
-- ✅ Graph construction from PDF
+- ✅ Entity extraction working (Qwen2.5-1.5B Optimized)
+- ✅ Graph construction with persistence (SQL & ChromaDB)
 - ✅ Dual-level retrieval functional
-- ✅ Unit tests for all components
+- ✅ Context assembly logic (Feynman Chat aware)
+- ✅ Unit tests via script validation
 
 ---
 

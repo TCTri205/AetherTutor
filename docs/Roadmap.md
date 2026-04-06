@@ -1,8 +1,8 @@
 # Lộ Trình Phát Triển (Roadmap)
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 5, 2026
-> **Status:** Active (MVP Phase)
+> **Last Updated:** April 6, 2026
+> **Status:** Active (MVP Phase - Phase 2 Complete)
 
 ---
 
@@ -18,7 +18,8 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] Triển khai **Parent Orchestrator** với giao thức **MCP**.
 - [x] Xây dựng **LightRAG Pipeline**: Entity Extraction → Graph Construction → Dual-Level Retrieval.
 - [x] Hoàn thiện **Socratic Tutor Agent** (Chế độ Feynman Chat cơ bản với graph-aware context).
-- [ ] Implement document upload & processing (PDF → LightRAG graph).
+- [x] Implement document upload & processing (Text Ingestion logic).
+- [ ] Implement PDF text extraction.
 - [ ] Basic graph viewer để visualize knowledge graph.
 
 **MVP Scope:** Upload PDF → LightRAG Processing → Chat với AI
@@ -60,7 +61,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | Cột mốc | Mô tả | Trạng thái |
 | :--- | :--- | :--- |
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% |
-| **v0.1 (MVP)** | LightRAG core + Chat đơn luồng | 50% |
+| **v0.1 (MVP)** | LightRAG core + Chat đơn luồng | 70% |
 | **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
@@ -91,10 +92,10 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 ### Phase 2: LightRAG Pipeline & Validation (Week 3–4)
 
 - [x] Entity extraction từ documents.
-- [x] Graph construction với hỗ trợ persistence (local storage).
+- [x] Graph construction với hỗ trợ persistence (SQL & ChromaDB).
 - [x] Dual-level retrieval implementation.
-- [ ] **Connectivity Validation**: Hoàn thiện bộ script kiểm thử kết nối và hiệu năng trích xuất local.
-- [ ] Context assembly cho LLM với tối ưu hóa token.
+- [x] **Connectivity Validation**: Hoàn thiện bộ script kiểm thử kết nối (`scripts/validate_pipeline.py`).
+- [x] Context assembly cho LLM với tối ưu hóa prompt (Socratic mode).
 
 ### Phase 3: Document Processing (Week 5)
 
