@@ -43,3 +43,24 @@ class DocumentRepository:
             doc.error_message = error_message
             await self.session.flush()
         return doc
+
+    async def update_file_path(self, document_id: uuid.UUID, file_path: str):
+        doc = await self.get_by_id(document_id)
+        if doc:
+            doc.file_path = file_path
+            await self.session.flush()
+        return doc
+
+    async def list_all(self, skip: int = 0, limit: int = 100) -> list[Document]:
+        result = await self.session.execute(
+            select(Document).offset(skip).limit(limit).order_by(Document.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def delete(self, document_id: uuid.UUID) -> bool:
+        doc = await self.get_by_id(document_id)
+        if doc:
+            await self.session.delete(doc)
+            await self.session.flush()
+            return True
+        return False

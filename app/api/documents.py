@@ -1,7 +1,9 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 from http import HTTPStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
+import uuid
+
 from ..database import get_db
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
@@ -9,14 +11,26 @@ from ..repositories.graph_repo import GraphRepository
 from ..core.pipeline import LightRAGPipeline
 from ..core.entity_extractor import EntityExtractor
 from ..core.retriever import Retriever
-from ..schemas.lightrag import DocumentIngestRequest
+from ..schemas.lightrag import (
+    DocumentIngestRequest, 
+    DocumentUploadResponse, 
+    DocumentDetail,
+    ExtractionResult
+)
+from ..services.document_service import DocumentService
+from ..services.llm_service import llm_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-@router.post("/test-ingest", status_code=HTTPStatus.CREATED)
+def get_doc_service(db: AsyncSession = Depends(get_db), request: Request = None) -> DocumentService:
+    arq_pool = request.app.state.arq_pool if request else None
+    return DocumentService(db, arq_pool)
+
+@router.post("/test-ingest")
 async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends(get_db)):
     """
-    Ingest text content directly into the LightRAG pipeline for testing.
+    Ingest text content directly (Synchronous) for testing/debug.
+    Bypasses the background worker.
     """
     doc_repo = DocumentRepository(db)
     chunk_repo = ChunkRepository(db)
@@ -33,34 +47,83 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
     )
 
     try:
-        doc_id = await pipeline.process_document(request.content, request.filename)
-        return {"document_id": doc_id, "status": "COMPLETED"}
+        # 1. Tạo document record
+        import hashlib
+        content_hash = hashlib.sha256(request.content.encode()).hexdigest()
+        doc = await doc_repo.create(request.filename, content_hash)
+        
+        # 2. Chạy pipeline đồng bộ
+        await pipeline.ingest_text(doc.id, request.content)
+        await db.commit()
+        
+        return {"document_id": str(doc.id), "status": "COMPLETED"}
     except Exception as e:
+        await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-@router.post("/upload", status_code=HTTPStatus.CREATED)
-async def upload_document(file: UploadFile = File(...)):
-    """
-    Upload a PDF document and start the LightRAG processing pipeline.
-    """
-    return {"message": f"Document {file.filename} upload started."}
 
-@router.get("/", response_model=List[dict])
-async def list_documents():
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=HTTPStatus.ACCEPTED)
+async def upload_document(
+    file: UploadFile = File(...), 
+    service: DocumentService = Depends(get_doc_service)
+):
     """
-    List all documents and their processing status.
+    Tải lên file PDF và bắt đầu luồng xử lý tự động (Async).
+    Trả về 202 Accepted ngay lập tức.
     """
-    return []
+    doc = await service.upload_document(file)
+    return DocumentUploadResponse(
+        document_id=doc.id,
+        filename=doc.filename,
+        status=doc.status,
+        message="Yêu cầu đã được tiếp nhận và đang được xử lý trong hàng đợi."
+    )
 
-@router.get("/{document_id}")
-async def get_document_status(document_id: str):
+@router.get("/", response_model=List[DocumentDetail])
+async def list_documents(
+    skip: int = 0, 
+    limit: int = 100, 
+    service: DocumentService = Depends(get_doc_service)
+):
     """
-    Get the details and processing status of a specific document.
+    Liệt kê danh sách tài liệu và trạng thái xử lý.
     """
-    return {"document_id": document_id, "status": "processing"}
+    docs = await service.list_documents(skip, limit)
+    return [
+        DocumentDetail(
+            id=d.id,
+            filename=d.filename,
+            status=d.status,
+            created_at=d.created_at,
+            updated_at=d.updated_at,
+            error_message=d.error_message
+        ) for d in docs
+    ]
+
+@router.get("/{document_id}", response_model=DocumentDetail)
+async def get_document_status(
+    document_id: uuid.UUID, 
+    service: DocumentService = Depends(get_doc_service)
+):
+    """
+    Lấy thông tin chi tiết và trạng thái của một tài liệu cụ thể.
+    """
+    doc = await service.get_document_status(document_id)
+    return DocumentDetail(
+        id=doc.id,
+        filename=doc.filename,
+        status=doc.status,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        error_message=doc.error_message
+    )
 
 @router.delete("/{document_id}")
-async def delete_document(document_id: str):
+async def delete_document(
+    document_id: uuid.UUID, 
+    service: DocumentService = Depends(get_doc_service)
+):
     """
-    Delete a document and its associated knowledge graph.
+    Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File).
     """
-    return {"message": f"Document {document_id} deleted."}
+    await service.delete_document(document_id)
+    return {"message": f"Tài liệu {document_id} đã được xóa hoàn toàn khỏi hệ thống."}

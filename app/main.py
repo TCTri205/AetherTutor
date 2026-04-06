@@ -1,12 +1,24 @@
 from fastapi import FastAPI, Depends
 from .config import settings
 from .api import documents, chat, graph
+from .worker.queue import get_redis_pool
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Khởi tạo ARQ Pool
+    app.state.arq_pool = await get_redis_pool()
+    yield
+    # Đóng ARQ Pool khi tắt app
+    if app.state.arq_pool:
+        await app.state.arq_pool.close()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="AetherTutor - Your Agentic Learning OS (LightRAG Powered)",
     version="0.1.0",
-    docs_url="/docs"
+    docs_url="/docs",
+    lifespan=lifespan
 )
 
 @app.get("/")

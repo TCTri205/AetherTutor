@@ -50,33 +50,24 @@ class LightRAGPipeline(LightRAG):
             start += chunk_size - chunk_overlap
         return chunks
 
-    async def process_document(self, text: str, filename: str) -> str:
+    async def ingest_text(self, doc_id: uuid.UUID, text: str) -> str:
         """
-        Main ingestion pipeline.
-        1. Calculate hash & check uniqueness.
-        2. Create doc record.
-        3. Chunk text.
-        4. Store chunks (SQL & Chroma).
-        5. Extract entities (LLM).
-        6. Store Graph (SQL & Chroma).
-        7. Finalize status.
+        Hạt nhân xử lý văn bản:
+        1. Chia nhỏ văn bản (Chunking).
+        2. Lưu chunks vào PostgreSQL và ChromaDB.
+        3. Trích xuất thực thể và quan hệ (Entities & Relations) bằng LLM.
+        4. Lưu đồ thị tri thức (Knowledge Graph) vào PostgreSQL và ChromaDB.
+        5. Cập nhật trạng thái Document.
         """
-        content_hash = self._calculate_content_hash(text)
-        
-        # Check for duplicates
-        existing_doc = await self.doc_repo.get_by_hash(content_hash)
-        if existing_doc:
-            return str(existing_doc.id)
-
-        # Create document
-        doc = await self.doc_repo.create(filename, content_hash)
-        doc_id = doc.id
-
         try:
+            # Cập nhật trạng thái sang PROCESSING
             await self.doc_repo.update_status(doc_id, DocumentStatus.PROCESSING)
             
-            # Step 1: Chunking
+            # Bước 1: Chunking
             raw_chunks = self._chunk_text(text)
+            if not raw_chunks:
+                raise ValueError("Văn bản sau khi trích xuất rỗng hoặc quá ngắn.")
+
             chunks_to_db = []
             chroma_ids = []
             chroma_docs = []
@@ -97,7 +88,7 @@ class LightRAGPipeline(LightRAG):
                 chroma_docs.append(chunk_text)
                 chroma_metas.append({"document_id": str(doc_id), "chunk_index": i})
 
-            # Persistence: Chunks
+            # Lưu Chunks vào SQL & Chroma
             await self.chunk_repo.bulk_insert(chunks_to_db)
             chroma_client.chunks_collection.add(
                 ids=chroma_ids,
@@ -105,27 +96,21 @@ class LightRAGPipeline(LightRAG):
                 metadatas=chroma_metas
             )
 
-            # Step 2: Extraction (Extract from whole or by chunk? LLM model is 1.5B, better by chunk if long)
-            # For MVP, we'll extract from a combined sample or per-chunk if necessary.
-            # Plan says: "Xóa sổ các Entities trùng trong 1 document: gộp Node chung (canonical_name)"
-            
+            # Bước 2: Trích xuất tri thức (Entity & Relation Extraction)
             all_entities = []
             all_relations = []
             
-            # Extract per chunk for better accuracy with small model
+            # Trích xuất theo từng chunk để đảm bảo độ chính xác (đặc biệt với model nhỏ 1.5B)
             for chunk_text in raw_chunks:
                 extraction = await self.extractor.extract(chunk_text)
-                if not extraction:
-                    # Ingest failed to extract meaningful data (e.g. LLM API Error)
-                    raise Exception("Extraction failed completely. Check LLM provider/API key.")
-                
-                all_entities.extend(extraction.entities)
-                all_relations.extend(extraction.relations)
+                if extraction:
+                    all_entities.extend(extraction.entities)
+                    all_relations.extend(extraction.relations)
 
-            # Step 3: Map-Reduce Entities (Normalize)
+            # Tối ưu hóa: Loại bỏ các thực thể trùng lặp bằng cách gộp chung (Deduplication)
             dedup_entities = self.extractor.deduplicate_entities(all_entities)
             
-            # Persistence: Graph
+            # Chuẩn bị dữ liệu để lưu vào PostgreSQL
             entity_data_list = [
                 {
                     "canonical_name": e.name,
@@ -143,10 +128,11 @@ class LightRAGPipeline(LightRAG):
                 } for r in all_relations
             ]
 
+            # Lưu Graph vào SQL
             await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id)
             await self.graph_repo.bulk_upsert_relations(relation_data_list, doc_id)
 
-            # Persistence: Chroma Entities
+            # Bước 3: Lưu Graph vào ChromaDB (để phục vụ retrieval)
             entity_chroma_ids = [f"{doc_id}::entity::{e.name}" for e in dedup_entities]
             entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
             entity_chroma_metas = [{"document_id": str(doc_id), "entity_name": e.name} for e in dedup_entities]
@@ -158,15 +144,16 @@ class LightRAGPipeline(LightRAG):
                     metadatas=entity_chroma_metas
                 )
 
+            # Hoàn tất
             await self.doc_repo.update_status(doc_id, DocumentStatus.COMPLETED)
             return str(doc_id)
 
         except Exception as e:
+            # Ghi nhận lỗi vào DB
             await self.doc_repo.update_status(doc_id, DocumentStatus.FAILED, str(e))
-            # Rollback Chroma
+            # Dọn dẹp ChromaDB phòng trường hợp lỗi giữa chừng để đảm bảo tính nhất quán
             try:
-                chroma_client.chunks_collection.delete(where={"document_id": str(doc_id)})
-                chroma_client.entities_collection.delete(where={"document_id": str(doc_id)})
+                chroma_client.delete_by_document_id(doc_id)
             except:
                 pass
             raise e

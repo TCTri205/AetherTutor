@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 2 Complete)
+> **Status:** Active (MVP Phase - Phase 3 Complete)
 
 ---
 
@@ -19,8 +19,8 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] Xây dựng **LightRAG Pipeline**: Entity Extraction → Graph Construction → Dual-Level Retrieval.
 - [x] Hoàn thiện **Socratic Tutor Agent** (Chế độ Feynman Chat cơ bản với graph-aware context).
 - [x] Implement document upload & processing (Text Ingestion logic).
-- [ ] Implement PDF text extraction.
-- [ ] Basic graph viewer để visualize knowledge graph.
+- [x] Implement PDF text extraction.
+- [x] Basic graph viewer để visualize knowledge graph.
 
 **MVP Scope:** Upload PDF → LightRAG Processing → Chat với AI
 
@@ -61,7 +61,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | Cột mốc | Mô tả | Trạng thái |
 | :--- | :--- | :--- |
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% |
-| **v0.1 (MVP)** | LightRAG core + Chat đơn luồng | 70% |
+| **v0.1 (MVP)** | LightRAG core + Chat đơn luồng | 85% |
 | **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
@@ -97,12 +97,12 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] **Connectivity Validation**: Hoàn thiện bộ script kiểm thử kết nối (`scripts/validate_pipeline.py`).
 - [x] Context assembly cho LLM với tối ưu hóa prompt (Socratic mode).
 
-### Phase 3: Document Processing (Week 5)
+### Phase 3: Document Processing (Week 5) - COMPLETED
 
-- [ ] PDF upload & text extraction
-- [ ] Chunking strategy implementation
-- [ ] Batch entity processing
-- [ ] Graph persistence (save/load)
+- [x] PDF upload & text extraction
+- [x] Chunking strategy implementation
+- [x] Batch entity processing
+- [x] Graph persistence (save/load)
 
 ### Phase 4: Chat Integration (Week 6–7)
 

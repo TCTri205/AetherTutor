@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     DEFAULT_LLM_MODEL: str = "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
     DEFAULT_EMBEDDING_MODEL: str = "text-embedding-3-small"
 
+    # Document Processing
+    UPLOAD_DIR: str = "data/uploads"
+    MAX_FILE_SIZE_MB: int = 50
+    ALLOWED_EXTENSIONS: set[str] = {".pdf"}
+
+    # ARQ
+    ARQ_REDIS_URL: str = "redis://localhost:6379"
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

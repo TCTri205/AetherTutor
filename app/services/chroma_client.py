@@ -24,4 +24,9 @@ class ChromaClient:
     def entities_collection(self):
         return self.get_or_create_collection("aethertutor_entities")
 
+    def delete_by_document_id(self, document_id: str):
+        """Xóa toàn bộ chunks và entities liên quan đến document_id trong ChromaDB."""
+        self.chunks_collection.delete(where={"document_id": str(document_id)})
+        self.entities_collection.delete(where={"document_id": str(document_id)})
+
 chroma_client = ChromaClient()

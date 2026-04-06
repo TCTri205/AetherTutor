@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select, delete, or_
+from sqlalchemy import select, delete, or_, func
 from ..models.graph import GraphEntity, GraphRelation
 from typing import List, Dict, Any
 import uuid
@@ -9,14 +9,15 @@ class GraphRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def bulk_upsert_entities(self, entities: List[Dict[str, Any]], document_id: uuid.UUID):
+    async def bulk_upsert_entities(self, entities: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphEntity]:
         """
         Upsert entities for a document.
         If canonical_name already exists for this document, update description and confidence.
         """
         if not entities:
-            return
+            return []
 
+        results = []
         for entity_data in entities:
             stmt = insert(GraphEntity).values(
                 document_id=document_id,
@@ -31,17 +32,21 @@ class GraphRepository:
                     "entity_type": entity_data["entity_type"],
                     "confidence": entity_data.get("confidence", 0.5)
                 }
-            )
-            await self.session.execute(stmt)
+            ).returning(GraphEntity)
+            res = await self.session.execute(stmt)
+            results.append(res.scalar_one())
+        
         await self.session.flush()
+        return results
 
-    async def bulk_upsert_relations(self, relations: List[Dict[str, Any]], document_id: uuid.UUID):
+    async def bulk_upsert_relations(self, relations: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphRelation]:
         """
         Upsert relations for a document.
         """
         if not relations:
-            return
+            return []
 
+        results = []
         for rel_data in relations:
             stmt = insert(GraphRelation).values(
                 document_id=document_id,
@@ -55,9 +60,32 @@ class GraphRepository:
                     "description": rel_data["description"],
                     "relation_type": rel_data["relation_type"]
                 }
-            )
-            await self.session.execute(stmt)
+            ).returning(GraphRelation)
+            res = await self.session.execute(stmt)
+            results.append(res.scalar_one())
+        
         await self.session.flush()
+        return results
+
+    async def get_all_entities(self, document_id: uuid.UUID) -> List[GraphEntity]:
+        stmt = select(GraphEntity).where(GraphEntity.document_id == document_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_relations(self, document_id: uuid.UUID) -> List[GraphRelation]:
+        stmt = select(GraphRelation).where(GraphRelation.document_id == document_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_entities(self, document_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(GraphEntity).where(GraphEntity.document_id == document_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
+
+    async def count_relations(self, document_id: uuid.UUID) -> int:
+        stmt = select(func.count()).select_from(GraphRelation).where(GraphRelation.document_id == document_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def get_entity_neighbors(self, document_id: uuid.UUID, entity_names: List[str]) -> List[GraphRelation]:
         """

@@ -20,6 +20,7 @@ class Document(Base, TimestampMixin):
         Enum(DocumentStatus), default=DocumentStatus.PENDING
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename={self.filename}, status={self.status})>"

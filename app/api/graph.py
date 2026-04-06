@@ -4,7 +4,14 @@ from typing import List, Dict, Any
 from ..database import get_db
 from ..repositories.graph_repo import GraphRepository
 from ..core.retriever import Retriever
-from ..schemas.lightrag import QueryRequest, QueryResponse
+from ..services.llm_service import llm_service
+from ..schemas.lightrag import (
+    QueryRequest,
+    QueryResponse,
+    GraphNodeView,
+    GraphEdgeView
+)
+import uuid
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
@@ -15,14 +22,14 @@ async def query_graph(request: QueryRequest, db: AsyncSession = Depends(get_db))
     """
     if not request.document_id:
         raise HTTPException(status_code=400, detail="Document ID is required for now.")
-        
+
     graph_repo = GraphRepository(db)
     retriever = Retriever(graph_repo)
-    
+
     try:
         context = await retriever.retrieve(request.query, request.document_id)
         response_text = await retriever.generate(request.query, context)
-        
+
         return QueryResponse(
             query=request.query,
             response=response_text,
@@ -31,25 +38,56 @@ async def query_graph(request: QueryRequest, db: AsyncSession = Depends(get_db))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{document_id}/subgraph")
-async def get_document_subgraph(
-    document_id: str,
-    depth: int = 2
+@router.get("/{document_id}/view", response_model=Dict[str, List[Any]])
+async def get_document_graph(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    Get the localized knowledge subgraph for a document to be visualized.
+    Lấy toàn bộ dữ liệu đồ thị của một tài liệu để hiển thị lên UI (Visualization).
+    Trả về danh sách nodes và edges.
     """
+    repo = GraphRepository(db)
+    entities = await repo.get_all_entities(document_id)
+    relations = await repo.get_all_relations(document_id)
+
+    nodes = [
+        GraphNodeView(
+            id=e.canonical_name,
+            label=e.canonical_name,
+            type=e.entity_type,
+            description=e.description
+        ) for e in entities
+    ]
+
+    edges = [
+        GraphEdgeView(
+            id=str(r.id),
+            source=r.source_entity,
+            target=r.target_entity,
+            label=r.relation_type,
+            description=r.description
+        ) for r in relations
+    ]
+
     return {
-        "nodes": [{"id": "E1", "label": "Concept A"}, {"id": "E2", "label": "Concept B"}],
-        "edges": [{"source": "E1", "target": "E2", "label": "explains"}]
+        "nodes": nodes,
+        "edges": edges
     }
 
 @router.get("/{document_id}/stats")
-async def get_graph_stats(document_id: str):
+async def get_graph_stats(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Get statistics about the knowledge graph (number of entities, relations).
+    Lấy thống kê về số lượng thực thể và quan hệ đã trích xuất được từ tài liệu.
     """
+    repo = GraphRepository(db)
+    e_count = await repo.count_entities(document_id)
+    r_count = await repo.count_relations(document_id)
+
     return {
-        "entity_count": 42,
-        "relation_count": 68
+        "entity_count": e_count,
+        "relation_count": r_count
     }

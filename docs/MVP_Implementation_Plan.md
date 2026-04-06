@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 1 & 2 Complete)
+> **Status:** Active (MVP Phase - Phase 1, 2 & 3 Complete)
 
 ---
 
@@ -96,7 +96,7 @@ Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-te
 
 #### Tasks
 
-- [ ] Setup FastAPI project structure
+- [x] Setup FastAPI project structure
 - [ ] Setup MCP (Model Context Protocol) server/client layer
   - `app/`
     - `main.py` (FastAPI app)
@@ -163,7 +163,7 @@ Chi tiết mã nguồn và logic thực thi: [LightRAG_Implementation.md#3-light
 
 ---
 
-### Phase 3: Document Processing Pipeline (Week 5)
+### Phase 3: Document Processing Pipeline (Week 5) - COMPLETED
 
 **Mục tiêu:** Upload PDF → Extract text → Process with LightRAG → Store results.
 
