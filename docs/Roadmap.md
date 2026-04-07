@@ -62,6 +62,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | :--- | :--- | :--- |
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% |
 | **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming + Full Frontend UI | 100% ✅ |
+| **v0.1.1 (Refactoring)** | Code quality, performance, testing (+155% tests), production-ready | 100% ✅ |
 | **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |

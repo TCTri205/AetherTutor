@@ -38,6 +38,7 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 | [**Data_Model.md**](Data_Model.md) | Thiết kế Schema DB, Vector Store và Graph Storage. |
 | [**Database.md**](Database.md) | Hạ tầng cơ sở dữ liệu (Docker, Resource Optimization, Connection). |
 | [**Roadmap.md**](Roadmap.md) | Tầm nhìn dài hạn và các cột mốc quan trọng (Milestones). |
+| [**REFACTORING.md**](REFACTORING.md) | Chi tiết cải tiến code quality, performance, testing (v0.1.1). |
 
 ---
 
@@ -59,6 +60,7 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 - [**API Specifications (API_Specifications.md)**](API_Specifications.md): Đặc tả các Endpoints, tham số và ví dụ JSON (MVP Core).
 - [**Data Model & Schema (Data_Model.md)**](Data_Model.md): Thiết kế DB, Vector Store và Graph Storage.
 - [**Hướng dẫn đóng góp (Contributing.md)**](Contributing.md): Quy chuẩn mã nguồn và quy trình làm việc.
+- [**Tài liệu Refactoring (REFACTORING.md)**](REFACTORING.md): Chi tiết các cải tiến code quality, performance và testing (v0.1.1).
 
 ### 📂 Hạ tầng & Tương lai (Future Ops)
 *(Nằm trong thư mục `future_ops/`)*
