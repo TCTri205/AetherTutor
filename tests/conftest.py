@@ -111,23 +111,6 @@ def patch_llm_service(monkeypatch):
     return None
 
 
-# --- Integration Test Fixtures (cần DB thật) ---
-
-@pytest.fixture
-async def integration_test_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Fixture cho integration tests cần database thật.
-    Gọi tường minh trong integration tests.
-    """
-    async with test_engine.begin() as conn:
-        async with TestAsyncSessionLocal(bind=conn) as session:
-            try:
-                yield session
-            finally:
-                await session.rollback()
-                await session.close()
-        await test_engine.dispose()
-
 # --- Data Fixtures ---
 
 @pytest.fixture

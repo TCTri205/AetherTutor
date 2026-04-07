@@ -7,7 +7,7 @@ import uuid
 import json
 from contextvars import ContextVar
 from typing import Any, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 # ContextVar for async-safe, thread-safe per-request correlation ID
@@ -32,7 +32,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_data: Dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

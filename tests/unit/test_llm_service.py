@@ -4,9 +4,8 @@ Unit tests for LLM service with retry logic.
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.services.llm_service import LLMService
-from app.schemas.lightrag import ExtractionResult, ExtractedEntity, EntityRelation
+from app.schemas.lightrag import ExtractionResult
 import json
-import asyncio
 
 
 class MockResponse:

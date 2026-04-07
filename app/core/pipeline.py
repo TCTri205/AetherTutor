@@ -14,8 +14,7 @@ from .entity_extractor import EntityExtractor
 from .retriever import Retriever
 from ..schemas.lightrag import ExtractionResult
 from ..constants import (
-    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE,
-    ENTITY_CONFIDENCE_DEFAULT
+    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE
 )
 
 class LightRAGPipeline(LightRAG):

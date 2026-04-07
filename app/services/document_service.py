@@ -2,8 +2,10 @@ import os
 import uuid
 import hashlib
 import aiofiles
+import logging
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from arq.connections import ArqRedis
 
 from ..config import settings
@@ -13,6 +15,8 @@ from ..repositories.graph_repo import GraphRepository
 from ..core.exceptions import PermanentProcessingError
 from ..services.chroma_client import chroma_client
 from ..services.pdf_extractor import pdf_extractor
+
+logger = logging.getLogger(__name__)
 
 class DocumentService:
     def __init__(self, session: AsyncSession, arq_pool: ArqRedis):
@@ -53,7 +57,14 @@ class DocumentService:
             return existing_doc, True
 
         # 3. Tạo bản ghi Document (PENDING)
-        doc = await self.repo.create(file.filename, content_hash)
+        try:
+            doc = await self.repo.create(file.filename, content_hash)
+        except IntegrityError:
+            # Race condition: concurrent upload với cùng file — rollback và trả về doc đã tồn tại
+            await self.session.rollback()
+            existing_doc = await self.repo.get_by_hash(content_hash)
+            return existing_doc, True
+
         doc_id = doc.id
         
         # Tạo đường dẫn lưu file
@@ -123,8 +134,31 @@ class DocumentService:
         return await self._enrich_document(doc)
 
     async def list_documents(self, skip: int = 0, limit: int = 100) -> list[dict]:
-        docs = await self.repo.list_all(skip, limit)
-        return [await self._enrich_document(d) for d in docs]
+        """
+        Fetch documents with entity/relation counts in a single query.
+        Uses list_with_counts to avoid N+1 problem (was 1 + 2n queries, now 1).
+        """
+        rows = await self.repo.list_with_counts(skip, limit)
+        results = []
+        for doc, entity_count, relation_count in rows:
+            file_size = 0
+            if doc.file_path and os.path.exists(doc.file_path):
+                file_size = os.path.getsize(doc.file_path)
+
+            results.append({
+                "id": doc.id,
+                "filename": doc.filename,
+                "status": doc.status,
+                "processing_step": doc.processing_step,
+                "entity_count": entity_count,
+                "relation_count": relation_count,
+                "page_count": None,
+                "file_size": file_size,
+                "created_at": doc.created_at,
+                "updated_at": doc.updated_at,
+                "error_message": doc.error_message
+            })
+        return results
 
     async def delete_document(self, doc_id: uuid.UUID):
         """ Xóa tài liệu khỏi hệ thống hoàn toàn. """
@@ -138,15 +172,15 @@ class DocumentService:
         # 2. Xóa trong ChromaDB
         try:
             chroma_client.delete_by_document_id(doc_id)
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to delete ChromaDB data for document {doc_id}: {e}")
 
         # 3. Xóa file vật lý
         if doc.file_path and os.path.exists(doc.file_path):
             try:
                 os.remove(doc.file_path)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to delete file {doc.file_path}: {e}")
         
         await self.session.commit()
         return True

@@ -1,7 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from ..models.document import Document, DocumentStatus, ProcessingStep
-from typing import Optional
+from ..models.graph import GraphEntity, GraphRelation
+from typing import Optional, List, Tuple
 import uuid
 from .base import BaseRepository
 
@@ -58,6 +59,27 @@ class DocumentRepository(BaseRepository[Document]):
             doc.file_path = file_path
             await self.session.flush()
         return doc
+
+    async def list_with_counts(self, skip: int = 0, limit: int = 100) -> List[Tuple[Document, int, int]]:
+        """
+        Fetch documents with entity/relation counts in a single query.
+        Avoids N+1 problem by using LEFT JOIN + GROUP BY.
+        """
+        stmt = (
+            select(
+                Document,
+                func.count(GraphEntity.id, distinct=True).label("entity_count"),
+                func.count(GraphRelation.id, distinct=True).label("relation_count")
+            )
+            .outerjoin(GraphEntity, Document.id == GraphEntity.document_id)
+            .outerjoin(GraphRelation, Document.id == GraphRelation.document_id)
+            .group_by(Document.id)
+            .order_by(Document.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.all())  # List of (Document, entity_count, relation_count)
 
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Document]:
         result = await self.session.execute(

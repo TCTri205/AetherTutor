@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .config import settings
 from .api import documents, chat, graph
 from .api.limiter import limiter
@@ -10,6 +11,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from .logging_config import setup_logging, get_logger
 from .middleware import RequestLoggingMiddleware
+from .core.exceptions import AppError
 
 # Setup logging
 setup_logging(
@@ -54,6 +56,19 @@ app.add_middleware(RequestLoggingMiddleware)
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    """Map custom AppError hierarchy to proper HTTP responses."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.message,
+            "error_code": exc.error_code,
+            "details": exc.details
+        }
+    )
 
 @app.get("/")
 async def root():

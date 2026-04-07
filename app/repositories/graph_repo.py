@@ -14,6 +14,9 @@ class GraphRepository(BaseRepository[GraphEntity]):
         """
         Bulk upsert entities cho một document bằng single INSERT ... ON CONFLICT.
         Tối ưu: Thay vì N câu lệnh riêng lẻ, dùng 1 câu lệnh bulk.
+
+        Deduplicate input bằng conflict key để tránh PostgreSQL error:
+        "ON CONFLICT DO UPDATE command cannot affect row a second time".
         """
         if not entities:
             return []
@@ -27,7 +30,15 @@ class GraphRepository(BaseRepository[GraphEntity]):
             for entity_data in entities
         ]
 
-        stmt = insert(GraphEntity).values(enriched_entities).on_conflict_do_update(
+        # Deduplicate: giữ record cuối cùng cho mỗi conflict key.
+        # Conflict constraint: uq_document_entity_name(document_id, canonical_name)
+        seen: dict[tuple, dict] = {}
+        for ent in enriched_entities:
+            key = (ent["document_id"], ent["canonical_name"])
+            seen[key] = ent
+        deduped = list(seen.values())
+
+        stmt = insert(GraphEntity).values(deduped).on_conflict_do_update(
             constraint="uq_document_entity_name",
             set_={
                 "description": insert(GraphEntity).excluded.description,

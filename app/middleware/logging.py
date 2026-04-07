@@ -33,8 +33,8 @@ class RequestLoggingMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Generate correlation ID
-        correlation_id = str(uuid.uuid4())[:8]
+        # Generate correlation ID (16 hex chars = 2^64 space, negligible collision risk)
+        correlation_id = str(uuid.uuid4()).replace("-", "")[:16]
 
         # Set in contextvar (async-safe, per-request)
         set_correlation_id(correlation_id)
