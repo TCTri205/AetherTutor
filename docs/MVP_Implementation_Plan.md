@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 1, 2 & 3 Complete)
+> **Status:** Active (MVP Phase - Phase 1, 2, 3 & 4 Complete)
 
 ---
 
@@ -177,7 +177,7 @@ Chi tiết logic xử lý tài liệu: [LightRAG_Implementation.md#31-ingestion-
 
 ---
 
-### Phase 4: Chat Interface (Week 6-7)
+### Phase 4: Chat Interface (Week 6-7) - COMPLETED
 
 **Mục tiêu:** User có thể chat với AI, AI sử dụng LightRAG để trả lời với context và hỗ trợ Streaming.
 

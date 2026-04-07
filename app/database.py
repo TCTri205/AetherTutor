@@ -16,6 +16,9 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# Alias for compatibility with worker and other scripts
+async_session_factory = AsyncSessionLocal
+
 class Base(DeclarativeBase):
     pass
 

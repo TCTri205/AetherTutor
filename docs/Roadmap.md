@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 3 Complete)
+> **Status:** Active (MVP Phase - Phase 4 Complete)
 
 ---
 
@@ -61,7 +61,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | Cột mốc | Mô tả | Trạng thái |
 | :--- | :--- | :--- |
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% |
-| **v0.1 (MVP)** | LightRAG core + Chat đơn luồng | 85% |
+| **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming | 95% |
 | **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
@@ -104,12 +104,12 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] Batch entity processing
 - [x] Graph persistence (save/load)
 
-### Phase 4: Chat Integration (Week 6–7)
+### Phase 4: Chat Integration (Week 6–7) - COMPLETED
 
-- [ ] Chat endpoint với LightRAG context
-- [ ] Socratic mode với graph-aware prompts
-- [ ] Response streaming
-- [ ] Error handling & fallbacks
+- [x] Chat endpoint với LightRAG context
+- [x] Socratic mode với graph-aware prompts
+- [x] Response streaming (SSE)
+- [x] Error handling & Durability (Hardened)
 
 ### Phase 5: Frontend (Week 8–9)
 

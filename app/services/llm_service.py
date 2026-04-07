@@ -38,6 +38,24 @@ class LLMService:
         )
         return response
 
+    async def stream_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = settings.DEFAULT_LLM_MODEL,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ):
+        """
+        Helper for streaming completions.
+        """
+        return await self.client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True
+        )
+
     async def structured_extraction(
         self,
         prompt: str,
