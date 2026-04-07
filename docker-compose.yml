@@ -60,19 +60,77 @@ services:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
     mem_limit: 512mb
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
+    # Healthcheck removed: chromadb image lacks curl/wget
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 10s
     volumes:
       - chroma_data:/chroma/persona
     logging:
       driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks:
+      - aethertutor-net
+
+  api:
+    build: .
+    container_name: aethertutor-api
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_HOST=db
+      - REDIS_HOST=redis
+      - CHROMA_HOST=chromadb
+      - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - aethertutor-net
+
+  worker:
+    build: .
+    container_name: aethertutor-worker
+    restart: always
+    command: ["arq", "app.worker.tasks.WorkerSettings"]
+    environment:
+      - APP_ENV=production
+      - DATABASE_HOST=db
+      - REDIS_HOST=redis
+      - CHROMA_HOST=chromadb
+      - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+      - db
+      - chromadb
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - aethertutor-net
+
+  frontend:
+    build: 
+      context: ./frontend
+      args:
+        - VITE_API_URL=http://localhost:8001
+    container_name: aethertutor-ui
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
     networks:
       - aethertutor-net
 

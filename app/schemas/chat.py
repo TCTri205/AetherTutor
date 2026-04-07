@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Any
 import uuid
 from datetime import datetime
@@ -17,8 +17,7 @@ class ConversationRead(BaseModel):
     created_at: datetime
     last_message_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class MessageRead(BaseModel):
     id: uuid.UUID
@@ -30,8 +29,7 @@ class MessageRead(BaseModel):
     context_used: Optional[Any] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ConversationDetail(ConversationRead):
     messages: List[MessageRead] = []

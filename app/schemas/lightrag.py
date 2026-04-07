@@ -47,8 +47,8 @@ class DocumentDetail(BaseModel):
     relation_count: int = 0
     page_count: Optional[int] = None
     file_size: Optional[int] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     error_message: Optional[str] = None
 
 class GraphNodeView(BaseModel):

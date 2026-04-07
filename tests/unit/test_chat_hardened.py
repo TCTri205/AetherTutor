@@ -19,7 +19,8 @@ def mock_repo():
 @pytest.fixture
 def mock_retriever():
     retriever = AsyncMock()
-    retriever.retrieve = AsyncMock(return_value=[])
+    # retrieve() trả về tuple: (context_chunks, found_entities_list)
+    retriever.retrieve = AsyncMock(return_value=([], []))
     return retriever
 
 @pytest.fixture

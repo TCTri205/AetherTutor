@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundTasks, Query, Request
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 import uuid
@@ -21,13 +21,16 @@ async def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
 
 @router.post("/conversations/{document_id}", response_model=ConversationRead)
 async def create_conversation(
+    request: Request,
     document_id: uuid.UUID,
     title: str = Body("Cuộc hội thoại mới", embed=True),
     db: AsyncSession = Depends(get_db)
 ):
     """Tạo một cuộc hội thoại mới cho tài liệu cụ thể."""
-    chat_repo = ChatRepository(db)
-    return await chat_repo.create_conversation(document_id, title)
+    limiter = request.app.state.limiter
+    async with limiter.limit("20/minute", request):
+        chat_repo = ChatRepository(db)
+        return await chat_repo.create_conversation(document_id, title)
 
 @router.get("/conversations/{document_id}", response_model=List[ConversationRead])
 async def list_conversations(
@@ -40,7 +43,8 @@ async def list_conversations(
 
 @router.post("/stream")
 async def chat_stream(
-    request: ChatStreamRequest,
+    request: Request,
+    stream_request: ChatStreamRequest,
     background_tasks: BackgroundTasks,
     service: ChatService = Depends(get_chat_service)
 ):
@@ -48,25 +52,27 @@ async def chat_stream(
     Endpoint chính cho trò chuyện streaming (SSE).
     Hỗ trợ chế độ Socratic và Feynman.
     """
-    # 1. Khởi tạo/Lấy conversation_id
-    conv_id = await service.get_or_create_conversation(request.document_id, request.conversation_id)
+    limiter = request.app.state.limiter
+    async with limiter.limit("60/minute", request):
+        # 1. Khởi tạo/Lấy conversation_id
+        conv_id = await service.get_or_create_conversation(stream_request.document_id, stream_request.conversation_id)
 
-    # 2. Trả về stream SSE
-    return StreamingResponse(
-        service.chat_stream(
-            conversation_id=conv_id,
-            document_id=request.document_id,
-            user_query=request.message,
-            background_tasks=background_tasks,
-            mode=request.mode
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
+        # 2. Trả về stream SSE
+        return StreamingResponse(
+            service.chat_stream(
+                conversation_id=conv_id,
+                document_id=stream_request.document_id,
+                user_query=stream_request.message,
+                background_tasks=background_tasks,
+                mode=stream_request.mode
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
 
 @router.get("/history/{conversation_id}", response_model=ConversationDetail)
 async def get_chat_history(

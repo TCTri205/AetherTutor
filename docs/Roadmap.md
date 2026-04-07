@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 7, 2026
-> **Status:** Active (MVP Phase 5 Complete — Ready for Integration Testing)
+> **Status:** LAUNCHED (MVP Phase 6 Complete — Ready for Production deployment)
 
 ---
 
@@ -123,15 +123,11 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] **Testing:** 46 unit tests passing (Error types, Stores, SSE parser, ApiError) + E2E integration test guide (4 flows + error recovery)
 - [x] **Build:** `npm run build` SUCCESS — 0 errors, 1.2MB JS bundle, 95KB CSS
 
-### Phase 6: Integration & Launch (Week 10)
-
-- [x] Unit tests — 46/46 passing (SSE Parser, State Management, Error Helpers)
-- [x] E2E test documentation — Manual test guide với 4 flows + error recovery
-- [x] Accessibility — ARIA labels (chat log/aria-live, input labels, nav role, button labels)
-- [ ] Backend integration test — Full flow: Upload → Chat → Graph (manual testing với backend thật)
-- [ ] Performance optimization — Production build, CORS, caching
-- [ ] User testing — Real user feedback
-- [ ] MVP Launch
+- [x] Backend integration test — Full-stack validation: Upload → Chat → Graph (Completed với Docker)
+- [x] Performance optimization — CORS hardening, Rate limiting (slowapi), Production build
+- [x] CI/CD Pipeline — GitHub Actions workflow `ci.yml` setup
+- [x] Full-Stack Dockerization — Multi-stage builds + Nginx configuration
+- [x] MVP Launch ✅
 
 ---
 

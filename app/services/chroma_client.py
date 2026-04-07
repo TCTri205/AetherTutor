@@ -4,11 +4,17 @@ from ..config import settings
 
 class ChromaClient:
     def __init__(self):
-        self.client = chromadb.HttpClient(
-            host=settings.CHROMA_HOST,
-            port=str(settings.CHROMA_PORT),
-            settings=ChromaSettings(allow_reset=True, anonymized_telemetry=False)
-        )
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = chromadb.HttpClient(
+                host=settings.CHROMA_HOST,
+                port=str(settings.CHROMA_PORT),
+                settings=ChromaSettings(allow_reset=True, anonymized_telemetry=False)
+            )
+        return self._client
 
     def get_or_create_collection(self, name: str, metadata: dict = None):
         return self.client.get_or_create_collection(

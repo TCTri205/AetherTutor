@@ -65,6 +65,7 @@ from fastapi.responses import JSONResponse
 
 @router.post("/upload")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...), 
     service: DocumentService = Depends(get_doc_service)
 ):
@@ -72,7 +73,10 @@ async def upload_document(
     Tải lên file PDF và bắt đầu luồng xử lý tự động (Async).
     Trả về 202 Accepted cho file mới, 200 OK cho file đã tồn tại.
     """
-    doc, is_duplicate = await service.upload_document(file)
+    limiter = request.app.state.limiter
+    async with limiter.limit("5/minute", request):
+        doc, is_duplicate = await service.upload_document(file)
+    
     
     if is_duplicate:
         # File đã tồn tại — trả về 200 OK, frontend KHÔNG cần polling
@@ -122,11 +126,14 @@ async def get_document_status(
 
 @router.delete("/{document_id}")
 async def delete_document(
+    request: Request,
     document_id: uuid.UUID, 
     service: DocumentService = Depends(get_doc_service)
 ):
     """
     Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File).
     """
-    await service.delete_document(document_id)
+    limiter = request.app.state.limiter
+    async with limiter.limit("20/minute", request):
+        await service.delete_document(document_id)
     return {"message": f"Tài liệu {document_id} đã được xóa hoàn toàn khỏi hệ thống."}
