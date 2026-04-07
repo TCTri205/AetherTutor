@@ -63,6 +63,11 @@ class DocumentService:
             # Race condition: concurrent upload với cùng file — rollback và trả về doc đã tồn tại
             await self.session.rollback()
             existing_doc = await self.repo.get_by_hash(content_hash)
+            if existing_doc is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Concurrent upload conflict. Please retry."
+                )
             return existing_doc, True
 
         doc_id = doc.id
