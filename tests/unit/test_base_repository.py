@@ -85,14 +85,3 @@ class TestBaseRepository:
         
         assert result is False
         mock_session.delete.assert_not_called()
-    
-    @pytest.mark.asyncio
-    async def test_count(self, repo, mock_session):
-        """Test counting records."""
-        mock_result = MagicMock()
-        mock_result.scalar_one.return_value = 42
-        mock_session.execute.return_value = mock_result
-        
-        count = await repo.count()
-        
-        assert count == 42

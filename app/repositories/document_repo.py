@@ -63,17 +63,28 @@ class DocumentRepository(BaseRepository[Document]):
     async def list_with_counts(self, skip: int = 0, limit: int = 100) -> List[Tuple[Document, int, int]]:
         """
         Fetch documents with entity/relation counts in a single query.
-        Avoids N+1 problem by using LEFT JOIN + GROUP BY.
+        Uses correlated subqueries to avoid Cartesian product from double JOIN
+        (m entities × n relations = m*n rows would inflate counts).
         """
+        entity_count_sq = (
+            select(func.count(GraphEntity.id))
+            .where(GraphEntity.document_id == Document.id)
+            .correlate(Document)
+            .scalar_subquery()
+        )
+        relation_count_sq = (
+            select(func.count(GraphRelation.id))
+            .where(GraphRelation.document_id == Document.id)
+            .correlate(Document)
+            .scalar_subquery()
+        )
+
         stmt = (
             select(
                 Document,
-                func.count(GraphEntity.id, distinct=True).label("entity_count"),
-                func.count(GraphRelation.id, distinct=True).label("relation_count")
+                func.coalesce(entity_count_sq, 0).label("entity_count"),
+                func.coalesce(relation_count_sq, 0).label("relation_count")
             )
-            .outerjoin(GraphEntity, Document.id == GraphEntity.document_id)
-            .outerjoin(GraphRelation, Document.id == GraphRelation.document_id)
-            .group_by(Document.id)
             .order_by(Document.created_at.desc())
             .offset(skip)
             .limit(limit)
