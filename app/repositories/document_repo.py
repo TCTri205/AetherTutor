@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from ..models.document import Document, DocumentStatus
+from ..models.document import Document, DocumentStatus, ProcessingStep
 from typing import Optional
 import uuid
 
@@ -12,7 +12,8 @@ class DocumentRepository:
         doc = Document(
             filename=filename,
             content_hash=content_hash,
-            status=DocumentStatus.PENDING
+            status=DocumentStatus.PENDING,
+            processing_step=ProcessingStep.INITIAL
         )
         self.session.add(doc)
         await self.session.flush()
@@ -41,6 +42,15 @@ class DocumentRepository:
         if doc:
             doc.status = status
             doc.error_message = error_message
+            if status == DocumentStatus.COMPLETED:
+                doc.processing_step = ProcessingStep.COMPLETED
+            await self.session.flush()
+        return doc
+
+    async def update_processing_step(self, document_id: uuid.UUID, step: ProcessingStep):
+        doc = await self.get_by_id(document_id)
+        if doc:
+            doc.processing_step = step
             await self.session.flush()
         return doc
 

@@ -42,6 +42,11 @@ class DocumentDetail(BaseModel):
     id: uuid.UUID
     filename: str
     status: str
+    processing_step: Optional[str] = None
+    entity_count: int = 0
+    relation_count: int = 0
+    page_count: Optional[int] = None
+    file_size: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     error_message: Optional[str] = None

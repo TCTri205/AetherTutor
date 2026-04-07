@@ -57,7 +57,7 @@ class ChatService:
         history = await self.chat_repo.get_last_n_messages(conversation_id, n=10)
 
         # 3. Retrieve Context (Hybrid: Top-k chunks/graph)
-        context = await self.retriever.retrieve(user_query, str(document_id))
+        context, found_entities = await self.retriever.retrieve(user_query, str(document_id))
         context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 
         # 4. Construct Prompt
@@ -103,7 +103,7 @@ class ChatService:
                 content=full_content,
                 status=MessageStatus.COMPLETED
             )
-            yield f"event: done\ndata: {json.dumps({'content_full': full_content, 'context_used': assistant_msg.context_used})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'content_full': full_content, 'context_used': assistant_msg.context_used, 'found_entities': found_entities}, default=str)}\n\n"
 
         except (asyncio.CancelledError, GeneratorExit):
             logger.warning(f"Stream disconnected for message {assistant_msg.id}")

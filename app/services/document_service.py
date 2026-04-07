@@ -9,19 +9,22 @@ from arq.connections import ArqRedis
 from ..config import settings
 from ..models.document import Document, DocumentStatus
 from ..repositories.document_repo import DocumentRepository
+from ..repositories.graph_repo import GraphRepository
 from ..core.exceptions import PermanentProcessingError
 from ..services.chroma_client import chroma_client
+from ..services.pdf_extractor import pdf_extractor
 
 class DocumentService:
     def __init__(self, session: AsyncSession, arq_pool: ArqRedis):
         self.session = session
         self.arq_pool = arq_pool
         self.repo = DocumentRepository(session)
+        self.graph_repo = GraphRepository(session)
 
     def _calculate_hash(self, content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
 
-    async def upload_document(self, file: UploadFile) -> Document:
+    async def upload_document(self, file: UploadFile) -> tuple[Document, bool]:
         """
         Xử lý tải lên tài liệu:
         1. Validate (Size, Extension).
@@ -29,6 +32,7 @@ class DocumentService:
         3. Save file to disk.
         4. Create DB record.
         5. Enqueue background task.
+        Returns: (Document object, is_duplicate: bool)
         """
         # 1. Validation
         extension = os.path.splitext(file.filename)[1].lower()
@@ -45,10 +49,8 @@ class DocumentService:
         # 2. Check trùng lặp theo Hash
         existing_doc = await self.repo.get_by_hash(content_hash)
         if existing_doc:
-            # Nếu đã có file trùng hash, ta có thể trả về thông tin file cũ thay vì báo lỗi
-            # Hoặc báo lỗi 409 Conflict tùy theo yêu cầu UI.
-            # Ở đây tôi chọn trả về bản ghi cũ với thông tin đã tồn tại.
-            return existing_doc
+            # Nếu đã có file trùng hash, trả về kèm flag is_duplicate = True
+            return existing_doc, True
 
         # 3. Tạo bản ghi Document (PENDING)
         doc = await self.repo.create(file.filename, content_hash)
@@ -75,15 +77,13 @@ class DocumentService:
                 await self.arq_pool.enqueue_job("process_document_task", str(doc_id))
             except Exception as e:
                 # Nếu không enqueue được (Redis sập), ta phải thông báo và có thể rollback nhẹ
-                # Để đơn giản, ta mark status FAILED ngay lập tức.
                 await self.repo.update_status(doc_id, DocumentStatus.FAILED, f"Không thể kết nối hàng đợi: {str(e)}")
                 await self.session.commit()
-                # Có thể cân nhắc xóa file vật lý ở đây nếu muốn sạch sẽ
                 raise HTTPException(status_code=503, detail="Hệ thống hàng đợi đang bận. Vui lòng thử lại sau.")
 
-            # Trả về đối tượng Document đã cập nhật
+            # Trả về đối tượng Document đã cập nhật kèm flag is_duplicate = False
             await self.session.refresh(doc)
-            return doc
+            return doc, False
 
         except Exception as e:
             # Rollback nếu có bất kỳ lỗi nào trong quá trình lưu file hoặc cập nhật DB
@@ -92,14 +92,39 @@ class DocumentService:
                 os.remove(file_path)
             raise e
 
-    async def get_document_status(self, doc_id: uuid.UUID) -> Document:
+    async def _enrich_document(self, doc: Document) -> dict:
+        """ Bổ sung entity_count, relation_count và file_size vào doc object (as dict). """
+        entity_count = await self.graph_repo.count_entities(doc.id)
+        relation_count = await self.graph_repo.count_relations(doc.id)
+        
+        file_size = 0
+        if doc.file_path and os.path.exists(doc.file_path):
+            file_size = os.path.getsize(doc.file_path)
+        
+        # Note: page_count tạm thời để None nếu không lưu trong DB
+        return {
+            "id": doc.id,
+            "filename": doc.filename,
+            "status": doc.status,
+            "processing_step": doc.processing_step,
+            "entity_count": entity_count,
+            "relation_count": relation_count,
+            "page_count": None,
+            "file_size": file_size,
+            "created_at": doc.created_at,
+            "updated_at": doc.updated_at,
+            "error_message": doc.error_message
+        }
+
+    async def get_document_status(self, doc_id: uuid.UUID) -> dict:
         doc = await self.repo.get_by_id(doc_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu.")
-        return doc
+        return await self._enrich_document(doc)
 
-    async def list_documents(self, skip: int = 0, limit: int = 100):
-        return await self.repo.list_all(skip, limit)
+    async def list_documents(self, skip: int = 0, limit: int = 100) -> list[dict]:
+        docs = await self.repo.list_all(skip, limit)
+        return [await self._enrich_document(d) for d in docs]
 
     async def delete_document(self, doc_id: uuid.UUID):
         """ Xóa tài liệu khỏi hệ thống hoàn toàn. """

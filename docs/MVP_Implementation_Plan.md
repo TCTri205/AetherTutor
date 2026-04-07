@@ -1,8 +1,8 @@
 # MVP Implementation Plan với LightRAG
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 1, 2, 3 & 4 Complete)
+> **Last Updated:** April 7, 2026
+> **Status:** Active (MVP Phase 1-5 Complete — Ready for Integration Testing)
 
 ---
 
@@ -192,155 +192,110 @@ Chi tiết logic hội thoại Socratic: [LightRAG_Implementation.md#32-retrieva
 
 ---
 
-### Phase 5: Frontend (Week 8–9)
+### Phase 5: Frontend (Week 8–9) — COMPLETED ✅
 
-**Mục tiêu:** React UI cho upload, chat, và xem graph.
+**Mục tiêu:** ~~React UI cho upload, chat, và xem graph~~ → **ĐÃ HOÀN THÀNH** — Full React UI với đầy đủ tính năng MVP.
 
-```text
-frontend/
-├─ src/
-│   ├─ components/
-│   │   ├─ DocumentUpload.tsx
-│   │   ├─ ChatInterface.tsx
-│   │   ├─ GraphViewer.tsx
-│   │   └─ StatusIndicator.tsx
-│   ├─ hooks/
-│   │   ├─ useDocuments.ts
-│   │   └─ useChat.ts
-│   ├─ services/
-│   │   ├─ api.ts (API client)
-│   │   └─ websocket.ts
-│   └─ App.tsx
-├─ public/
-└─ package.json
+#### Tech Stack
+- **React 18 + TypeScript + Vite**
+- **Tailwind CSS v4** — Utility-first styling
+- **Zustand** — State management (3 stores: chat, document, ui)
+- **Axios** — HTTP client với custom interceptors + retry logic
+- **fetch + ReadableStream** — SSE streaming với buffered parser
+- **ReactFlow v11** — Knowledge graph visualization
+- **Framer Motion** — Animations (page transitions, drawer, modal scales)
+- **Lucide React** — Icons
+- **Sonner** — Toast notifications
+- **React Markdown + KaTeX** — Markdown rendering với math support
+- **React Error Boundary** — Route-level error handling
+
+#### Kiến trúc Frontend
+```
+frontend/src/
+├── pages/                    # 4 pages
+│   ├── Dashboard.tsx         # Welcome, quick actions, recent docs
+│   ├── Vault.tsx             # Document library (upload, list, filter, sort)
+│   ├── Chat.tsx              # Chat interface (SSE streaming, conversations)
+│   └── GraphExplorer.tsx     # Knowledge graph (ReactFlow, radial layout)
+├── components/
+│   ├── ui/                   # Base design system (Button, Badge, Card, Skeleton, Dialog, Progress)
+│   ├── shared/               # Shared components
+│   │   ├── ChatHeader.tsx, ChatMessage.tsx, ChatErrorCard.tsx
+│   │   ├── ContextChips.tsx, ConversationList.tsx
+│   │   ├── DocumentGuard.tsx, UploadModal.tsx
+│   │   └── ErrorBoundary.tsx, FallbackError.tsx
+│   └── graph/GraphSidebar.tsx  # Entity detail panel
+├── store/                    # Zustand stores (chat.ts, document.ts, ui.ts)
+├── hooks/                    # useChat.ts (SSE), usePolling.ts (status)
+├── services/                 # API clients (api, chat, documents, graph, health)
+├── types/                    # TypeScript types (api.ts, errors.ts)
+├── layouts/RootLayout.tsx    # App shell (sidebar, topnav, mobile drawer)
+└── __tests__/phase5.test.ts  # 46 unit tests
 ```
 
-**Key Components:**
+#### Tính năng đã implement
 
-1. **DocumentUpload.tsx**
-   ```tsx
-   export function DocumentUpload() {
-     const [uploading, setUploading] = useState(false);
-     const [progress, setProgress] = useState(0);
-     
-     const handleUpload = async (file: File) => {
-       setUploading(true);
-       const formData = new FormData();
-       formData.append('file', file);
-       
-       const response = await fetch('/api/v1/documents/process', {
-         method: 'POST',
-         body: formData
-       });
-       
-       const result = await response.json();
-       setUploading(false);
-       
-       // Show success notification
-     };
-     
-     return (
-       <div className="upload-area">
-         <input 
-           type="file" 
-           accept=".pdf"
-           onChange={(e) => handleUpload(e.target.files[0])}
-         />
-         {uploading && <ProgressBar value={progress} />}
-       </div>
-     );
-   }
-   ```
+**1. Document Management (Sprint 5)**
+- ✅ Drag & drop PDF upload (max 50MB, validation)
+- ✅ Upload modal với file info display
+- ✅ Document list với filter (All/Processing/Completed/Failed), sort (Recent/Name)
+- ✅ Processing progress — granular steps (EXTRACTING → CHUNKING → EXTRACTING_ENTITIES → BUILDING_GRAPH → EMBEDDING → COMPLETED)
+- ✅ Polling auto-update mỗi 3s, auto-stop khi COMPLETED/FAILED
+- ✅ Document deletion guard (404 → redirect + toast)
+- ✅ Empty states cho Dashboard + Vault
 
-2. **ChatInterface.tsx**
-   ```tsx
-   export function ChatInterface({ documentId }: Props) {
-     const [messages, setMessages] = useState<Message[]>([]);
-     const [input, setInput] = useState('');
-     
-     const sendMessage = async () => {
-       const userMessage = { role: 'user', content: input };
-       setMessages([...messages, userMessage]);
-       
-       const response = await fetch('/api/v1/chat/socratic', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({
-           message: input,
-           document_id: documentId,
-           mode: 'socratic'
-         })
-       });
-       
-       const result = await response.json();
-       setMessages(prev => [...prev, {
-         role: 'assistant',
-         content: result.data.response
-       }]);
-       
-       setInput('');
-     };
-     
-     return (
-       <div className="chat-container">
-         <MessageList messages={messages} />
-         <input 
-           value={input}
-           onChange={(e) => setInput(e.target.value)}
-           onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-         />
-       </div>
-     );
-   }
-   ```
+**2. Chat Interface (Sprint 6 — P0 Core)**
+- ✅ SSE streaming với buffered parser (fetch + ReadableStream)
+- ✅ Retry logic (max 3x exponential backoff trước meta event)
+- ✅ 30s chunk timeout detection (S8.1f: AI không phản hồi)
+- ✅ Optimistic UI update (user message hiển thị ngay)
+- ✅ Markdown rendering (code blocks, lists, tables, bold)
+- ✅ ContextChips — entity pills từ SSE `found_entities`, click → navigate Graph với highlight
+- ✅ ConversationList sidebar — create/delete/load conversations
+- ✅ Conversation Title Sync — poll 5 lần sau COMPLETED (15s timeout)
+- ✅ Feynman mode only (MVP), Socratic mode disabled với "Coming soon in v2" tooltip
+- ✅ Chat input: auto-resize textarea, Enter to send, disabled khi streaming
+- ✅ Auto-scroll to bottom khi có message mới
 
-3. **GraphViewer.tsx**
-   ```tsx
-   import ReactFlow from 'reactflow';
-   
-   export function GraphViewer({ documentId }: Props) {
-     const [nodes, setNodes] = useState([]);
-     const [edges, setEdges] = useState([]);
-     
-     useEffect(() => {
-       const fetchGraph = async () => {
-         const response = await fetch('/api/v1/graph/subgraph', {
-           method: 'POST',
-           body: JSON.stringify({ document_id: documentId })
-         });
-         const result = await response.json();
-         
-         setNodes(result.data.nodes.map(node => ({
-           id: node.id,
-           data: { label: node.name },
-           position: { x: node.x, y: node.y }
-         })));
-         
-         setEdges(result.data.edges.map(edge => ({
-           id: `${edge.source}-${edge.target}`,
-           source: edge.source,
-           target: edge.target,
-           label: edge.relation_type
-         })));
-       };
-       
-       fetchGraph();
-     }, [documentId]);
-     
-     return (
-       <ReactFlow nodes={nodes} edges={edges}>
-         <Controls />
-         <MiniMap />
-       </ReactFlow>
-     );
-   }
-   ```
+**3. Knowledge Graph (Sprint 7)**
+- ✅ ReactFlow viewer với radial layout từ tâm (0,0)
+- ✅ Custom nodes — color theo entity type (concept=indigo, term=amber, process=green, theory=purple)
+- ✅ Custom edges — animated dashed lines với relation_type labels
+- ✅ Entity search — highlight matching nodes, dim others
+- ✅ GraphSidebar — entity name, type badge, description, neighbors list, degree count
+- ✅ "Chat về entity này" button → navigate Chat với pre-filled query
+- ✅ Empty state: "Chưa có Knowledge Graph"
+- ✅ Stats display: "X Nút • Y Cạnh"
 
-**Deliverables:**
-- ✅ Upload UI working
-- ✅ Chat interface working
-- ✅ Graph viewer functional
-- ✅ Responsive design
+**4. App Layout & Polish (Sprint 4, 8)**
+- ✅ Responsive sidebar — desktop collapse + mobile drawer (framer-motion spring animation)
+- ✅ LLM Mode Badge — connect `/health` để hiển thị 🔒 Local hoặc 🌐 Cloud
+- ✅ 6 error states: LLM Timeout, File >50MB, Scanned PDF, Invalid API Key, Network Failure, AI No Response
+- ✅ Global Error Boundary — route-level wrapping với react-error-boundary
+- ✅ Micro-animations — page transitions, modal scales, entity chips animations
+- ✅ ARIA labels — chat log (role="log", aria-live="polite"), input labels, nav role, button labels
+- ✅ Build: `npm run build` SUCCESS — 0 errors, 1.2MB JS bundle, 95KB CSS
+
+#### Testing
+- ✅ **Unit Tests:** 46/46 passing
+  - Error types & helpers (22 tests)
+  - ApiError class (2 tests)
+  - Chat Store (6 tests)
+  - Document Store (3 tests)
+  - UI Store (5 tests)
+  - SSE Parser (8 tests)
+- ✅ **E2E Test Guide:** `docs/E2E_INTEGRATION_TESTS.md` — 4 flows + error recovery
+- ✅ **Accessibility:** ARIA labels cho chat log, inputs, navigation, buttons
+
+#### Deliverables
+- ✅ Upload UI working (drag & drop, validation, progress)
+- ✅ Chat interface working (SSE streaming, context chips, error recovery)
+- ✅ Graph viewer functional (radial layout, entity details, search)
+- ✅ Responsive design (desktop + mobile drawer)
+- ✅ Empty states (Dashboard, Vault, Chat, Graph)
+- ✅ Error states (6 types với recovery actions)
+- ✅ Build pass (0 TypeScript errors)
+- ✅ Unit tests (46 passing)
 
 ---
 
@@ -352,23 +307,27 @@ frontend/
 
 **Unit Tests:**
 
-- [ ] Entity extraction tests
-- [ ] Graph construction tests
-- [ ] Retrieval accuracy tests
-- [ ] Chat service tests
-- [ ] API endpoint tests
+- [x] Error types & helpers — 22 tests (ErrorCode constants, getErrorMessage, mapHttpStatusToErrorCode, isNetworkError, isRetryable)
+- [x] ApiError class — 2 tests (full properties, minimal properties)
+- [x] Chat Store — 6 tests (initial state, setConversation, addMessage, updateMessage, clearChat, setMessages)
+- [x] Document Store — 3 tests (initial state, updateDocumentStatus, removeDocument)
+- [x] UI Store — 5 tests (initial state, toggleSidebar, setMobileMenuOpen, toggleTheme, setLlmInfo)
+- [x] SSE Parser — 8 tests (meta, chunk, done with found_entities, error, multiple events, fragmented buffer, empty lines, reasoning)
 
 **Integration Tests:**
 
-- [ ] Full pipeline: PDF → Graph → Chat
-- [ ] Multiple documents test
+- [x] E2E test documentation — `docs/E2E_INTEGRATION_TESTS.md` với 4 flows + error recovery
+- [ ] Backend integration test — Full flow: Upload → Chat → Graph (manual testing với backend thật)
+- [ ] Multi-document test
 - [ ] Concurrent requests test
 
 **Performance Tests:**
 
-- [ ] Document processing < 30s
-- [ ] Query response < 3s
-- [ ] Memory usage < 2GB
+- [x] Build size: JS bundle 1.2MB (< 2MB target) ✅
+- [x] Build size: CSS 95KB (< 200KB target) ✅
+- [ ] Document processing < 30s (manual test)
+- [ ] Query response < 3s (manual test)
+- [ ] Memory usage < 2GB (manual test)
 
 **User Testing:**
 
@@ -376,6 +335,13 @@ frontend/
 - [ ] Chat flow test end-to-end
 - [ ] Graph visualization test
 - [ ] Document feedback collection
+
+**Accessibility:**
+
+- [x] ARIA labels — chat log (role="log", aria-live="polite"), input labels, navigation role, button labels, LLM badge (role="status")
+- [ ] Keyboard navigation testing
+- [ ] Screen reader testing
+- [ ] Color contrast validation
 
 ---
 
@@ -488,4 +454,10 @@ Sau khi MVP hoàn thành, các tính năng tiếp theo:
 
 ---
 
-© 2026 AetherTutor Team. Last updated: April 5, 2026
+© 2026 AetherTutor Team. Last updated: April 7, 2026
+
+**Phase 5 Status:** ✅ COMPLETE — 100% MVP Frontend Implementation
+- 34 components, 4 pages, 3 stores, 2 hooks, 5 API services
+- 46 unit tests passing, E2E test guide created
+- Build: 0 errors (1.2MB JS, 95KB CSS)
+- Ready for backend integration testing

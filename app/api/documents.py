@@ -61,22 +61,41 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/upload", response_model=DocumentUploadResponse, status_code=HTTPStatus.ACCEPTED)
+from fastapi.responses import JSONResponse
+
+@router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...), 
     service: DocumentService = Depends(get_doc_service)
 ):
     """
     Tải lên file PDF và bắt đầu luồng xử lý tự động (Async).
-    Trả về 202 Accepted ngay lập tức.
+    Trả về 202 Accepted cho file mới, 200 OK cho file đã tồn tại.
     """
-    doc = await service.upload_document(file)
-    return DocumentUploadResponse(
-        document_id=doc.id,
-        filename=doc.filename,
-        status=doc.status,
-        message="Yêu cầu đã được tiếp nhận và đang được xử lý trong hàng đợi."
-    )
+    doc, is_duplicate = await service.upload_document(file)
+    
+    if is_duplicate:
+        # File đã tồn tại — trả về 200 OK, frontend KHÔNG cần polling
+        return JSONResponse(
+            status_code=200,
+            content={
+                "document_id": str(doc.id),
+                "filename": doc.filename,
+                "status": doc.status,
+                "message": "Tài liệu này đã tồn tại trong hệ thống."
+            }
+        )
+    else:
+        # File mới — trả về 202 Accepted, frontend CẦN polling
+        return JSONResponse(
+            status_code=202,
+            content={
+                "document_id": str(doc.id),
+                "filename": doc.filename,
+                "status": doc.status,
+                "message": "Yêu cầu đã được tiếp nhận và đang được xử lý trong hàng đợi."
+            }
+        )
 
 @router.get("/", response_model=List[DocumentDetail])
 async def list_documents(
@@ -87,17 +106,8 @@ async def list_documents(
     """
     Liệt kê danh sách tài liệu và trạng thái xử lý.
     """
-    docs = await service.list_documents(skip, limit)
-    return [
-        DocumentDetail(
-            id=d.id,
-            filename=d.filename,
-            status=d.status,
-            created_at=d.created_at,
-            updated_at=d.updated_at,
-            error_message=d.error_message
-        ) for d in docs
-    ]
+    docs_data = await service.list_documents(skip, limit)
+    return [DocumentDetail(**d) for d in docs_data]
 
 @router.get("/{document_id}", response_model=DocumentDetail)
 async def get_document_status(
@@ -107,15 +117,8 @@ async def get_document_status(
     """
     Lấy thông tin chi tiết và trạng thái của một tài liệu cụ thể.
     """
-    doc = await service.get_document_status(document_id)
-    return DocumentDetail(
-        id=doc.id,
-        filename=doc.filename,
-        status=doc.status,
-        created_at=doc.created_at,
-        updated_at=doc.updated_at,
-        error_message=doc.error_message
-    )
+    doc_data = await service.get_document_status(document_id)
+    return DocumentDetail(**doc_data)
 
 @router.delete("/{document_id}")
 async def delete_document(

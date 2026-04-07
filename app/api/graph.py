@@ -27,7 +27,7 @@ async def query_graph(request: QueryRequest, db: AsyncSession = Depends(get_db))
     retriever = Retriever(graph_repo)
 
     try:
-        context = await retriever.retrieve(request.query, request.document_id)
+        context, _ = await retriever.retrieve(request.query, request.document_id)
         response_text = await retriever.generate(request.query, context)
 
         return QueryResponse(

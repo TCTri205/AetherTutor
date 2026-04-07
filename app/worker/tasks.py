@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import async_session_factory
-from ..models.document import DocumentStatus
+from ..models.document import DocumentStatus, ProcessingStep
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
 from ..repositories.graph_repo import GraphRepository
@@ -58,6 +58,7 @@ async def process_document_task(ctx: Any, doc_id_str: str):
             if not doc.file_path:
                 raise PermanentProcessingError("Tài liệu không có đường dẫn file vật lý.")
             
+            await doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING)
             logger.info(f"Đang trích xuất văn bản từ PDF: {doc.file_path}")
             text = pdf_extractor.extract_text(doc.file_path)
             

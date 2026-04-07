@@ -1,0 +1,166 @@
+@import "katex/dist/katex.min.css";
+@import "tailwindcss";
+
+@theme {
+  --color-background: #030712;
+  --color-foreground: #f9fafb;
+
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #1f2937;
+  --color-secondary-foreground: #f9fafb;
+
+  --color-muted: #111827;
+  --color-muted-foreground: #9ca3af;
+
+  --color-accent: #2563eb;
+  --color-accent-foreground: #f9fafb;
+
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #f9fafb;
+
+  --color-border: #1f2937;
+  --color-input: #1f2937;
+  --color-ring: #3b82f6;
+
+  --radius-lg: 0.5rem;
+  --radius-md: calc(0.5rem - 2px);
+  --radius-sm: calc(0.5rem - 4px);
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  }
+  .glass-dark {
+    @apply bg-black/40 backdrop-blur-xl border border-white/5;
+  }
+  .animate-pulse-slow {
+    animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  .animate-progress-indeterminate {
+    animation: progress-indeterminate 2s linear infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Chat Error Card Styles */
+.chat-error-card {
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chat-error-card .error-content {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border: 2px solid #fecaca;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
+}
+
+.chat-error-card .error-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.chat-error-card .error-icon {
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.chat-error-card .error-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin: 0;
+}
+
+.chat-error-card .error-message {
+  font-size: 1rem;
+  color: #374151;
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+.chat-error-card .error-suggestion {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 1rem;
+  font-style: italic;
+}
+
+.chat-error-card .error-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.chat-error-card .error-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.chat-error-card .error-action-btn .action-icon {
+  font-size: 1rem;
+}
+
+.chat-error-card .error-action-btn.retry-btn {
+  background: #3b82f6;
+  color: white;
+}
+
+.chat-error-card .error-action-btn.retry-btn:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(59, 130, 246, 0.3);
+}
+
+.chat-error-card .error-action-btn.settings-btn {
+  border: 1px solid #d1d5db;
+  color: #374151;
+  background: white;
+}
+
+.chat-error-card .error-action-btn.settings-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+  transform: translateY(-1px);
+}
+

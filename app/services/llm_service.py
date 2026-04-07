@@ -7,11 +7,11 @@ from ..config import settings
 class LLMService:
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         # Use explicit base_url or OLLAMA_BASE_URL if no valid OpenAI key provided
-        is_openai_valid = api_key and not api_key.startswith("your_")
-        if not is_openai_valid and settings.OPENAI_API_KEY:
-             is_openai_valid = not settings.OPENAI_API_KEY.startswith("your_")
+        self.is_openai = api_key and not api_key.startswith("your_")
+        if not self.is_openai and settings.OPENAI_API_KEY:
+             self.is_openai = not settings.OPENAI_API_KEY.startswith("your_")
 
-        target_base_url = base_url or (None if is_openai_valid else settings.OLLAMA_BASE_URL)
+        target_base_url = base_url or (None if self.is_openai else settings.OLLAMA_BASE_URL)
         target_api_key = api_key or settings.OPENAI_API_KEY or "ollama"
         if not target_api_key or target_api_key.startswith("your_"):
             target_api_key = "ollama"
@@ -20,6 +20,18 @@ class LLMService:
             api_key=target_api_key,
             base_url=target_base_url
         )
+
+    async def health_check(self) -> bool:
+        """
+        Check if LLM service is reachable.
+        """
+        try:
+            # Simple list models call or a very cheap completion
+            await self.client.models.list()
+            return True
+        except Exception as e:
+            print(f"LLM Health Check failed: {e}")
+            return False
 
     async def get_chat_completion(
         self, 

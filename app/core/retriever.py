@@ -15,9 +15,10 @@ class Retriever:
     def __init__(self, graph_repo: GraphRepository):
         self.graph_repo = graph_repo
 
-    async def retrieve(self, query: str, document_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    async def retrieve(self, query: str, document_id: str, top_k: int = 5) -> tuple[List[Dict[str, Any]], List[str]]:
         """
         Dual-level retrieval from ChromaDB and SQL Graph.
+        Returns: (context list, found entity names)
         """
         context = []
         doc_uuid = uuid.UUID(document_id)
@@ -55,7 +56,7 @@ class Retriever:
                     "metadata": {"source": rel.source_entity, "target": rel.target_entity}
                 })
 
-        return context
+        return context, found_entity_names
 
     async def generate(self, query: str, context: List[Dict[str, Any]]) -> str:
         """

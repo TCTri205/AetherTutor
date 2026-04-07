@@ -1,8 +1,8 @@
 # Lộ Trình Phát Triển (Roadmap)
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 6, 2026
-> **Status:** Active (MVP Phase - Phase 4 Complete)
+> **Last Updated:** April 7, 2026
+> **Status:** Active (MVP Phase 5 Complete — Ready for Integration Testing)
 
 ---
 
@@ -61,7 +61,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | Cột mốc | Mô tả | Trạng thái |
 | :--- | :--- | :--- |
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% |
-| **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming | 95% |
+| **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming + Full Frontend UI | 100% ✅ |
 | **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
@@ -111,18 +111,26 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] Response streaming (SSE)
 - [x] Error handling & Durability (Hardened)
 
-### Phase 5: Frontend (Week 8–9)
+### Phase 5: Frontend (Week 8–9) — COMPLETED ✅
 
-- [ ] Document upload UI
-- [ ] Chat interface
-- [ ] Graph viewer (**React Flow**)
-- [ ] Status indicators
+- [x] Document upload UI (drag & drop, validation, progress tracking)
+- [x] Chat interface (SSE streaming với buffered parser, retry logic, 30s timeout detection)
+- [x] Graph viewer (React Flow — radial layout, custom nodes/edges với relation_type labels)
+- [x] Status indicators (granular processing steps: EXTRACTING → CHUNKING → EXTRACTING_ENTITIES → BUILDING_GRAPH → EMBEDDING → COMPLETED)
+- [x] **Tech Stack:** React 18 + TypeScript + Vite, Tailwind CSS v4, Zustand, Axios, Sonner (toasts), framer-motion, reactflow v11, lucide-react, react-markdown + KaTeX
+- [x] **Components:** 34 files — 4 pages (Dashboard, Vault, Chat, GraphExplorer), 3 Zustand stores, 2 hooks (useChat, usePolling), 5 API services
+- [x] **Features:** ContextChips (found_entities từ SSE), ConversationList sidebar, LLM Mode Badge (🔒 Local / 🌐 Cloud), mobile sidebar toggle với framer-motion drawer, error states (6 types), ARIA labels
+- [x] **Testing:** 46 unit tests passing (Error types, Stores, SSE parser, ApiError) + E2E integration test guide (4 flows + error recovery)
+- [x] **Build:** `npm run build` SUCCESS — 0 errors, 1.2MB JS bundle, 95KB CSS
 
-### Phase 6: Testing & Launch (Week 10)
+### Phase 6: Integration & Launch (Week 10)
 
-- [ ] Unit & integration tests
-- [ ] Performance optimization
-- [ ] User testing
+- [x] Unit tests — 46/46 passing (SSE Parser, State Management, Error Helpers)
+- [x] E2E test documentation — Manual test guide với 4 flows + error recovery
+- [x] Accessibility — ARIA labels (chat log/aria-live, input labels, nav role, button labels)
+- [ ] Backend integration test — Full flow: Upload → Chat → Graph (manual testing với backend thật)
+- [ ] Performance optimization — Production build, CORS, caching
+- [ ] User testing — Real user feedback
 - [ ] MVP Launch
 
 ---

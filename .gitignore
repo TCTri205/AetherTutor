@@ -33,3 +33,9 @@ alembic/versions/*.pyc
 # Operating System
 .DS_Store
 Thumbs.db
+
+# Frontend
+
+# Agents
+.qwen/
+.gemini/

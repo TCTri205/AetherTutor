@@ -119,7 +119,7 @@ async def socratic_chat_legacy(
     retriever = Retriever(graph_repo)
     
     doc_uuid = uuid.UUID(document_id)
-    context = await retriever.retrieve(message, document_id)
+    context, _ = await retriever.retrieve(message, document_id)
     context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
     
     # Simple generation without complex state management for legacy

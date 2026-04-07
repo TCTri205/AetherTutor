@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 import tiktoken
 
 from .lightrag import LightRAG
-from ..models.document import DocumentStatus
+from ..models.document import DocumentStatus, ProcessingStep
 from ..models.graph import DocumentChunk
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
@@ -64,6 +64,7 @@ class LightRAGPipeline(LightRAG):
             await self.doc_repo.update_status(doc_id, DocumentStatus.PROCESSING)
             
             # Bước 1: Chunking
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.CHUNKING)
             raw_chunks = self._chunk_text(text)
             if not raw_chunks:
                 raise ValueError("Văn bản sau khi trích xuất rỗng hoặc quá ngắn.")
@@ -97,6 +98,7 @@ class LightRAGPipeline(LightRAG):
             )
 
             # Bước 2: Trích xuất tri thức (Entity & Relation Extraction)
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING_ENTITIES)
             all_entities = []
             all_relations = []
             
@@ -129,10 +131,12 @@ class LightRAGPipeline(LightRAG):
             ]
 
             # Lưu Graph vào SQL
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.BUILDING_GRAPH)
             await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id)
             await self.graph_repo.bulk_upsert_relations(relation_data_list, doc_id)
 
             # Bước 3: Lưu Graph vào ChromaDB (để phục vụ retrieval)
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EMBEDDING)
             entity_chroma_ids = [f"{doc_id}::entity::{e.name}" for e in dedup_entities]
             entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
             entity_chroma_metas = [{"document_id": str(doc_id), "entity_name": e.name} for e in dedup_entities]

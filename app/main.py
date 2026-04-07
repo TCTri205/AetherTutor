@@ -1,8 +1,10 @@
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .api import documents, chat, graph
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
+from .services.llm_service import llm_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -19,6 +21,20 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     lifespan=lifespan
+)
+
+# S0.7: Add CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:3000",   # Alternative dev port
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.get("/")
@@ -70,11 +86,23 @@ async def health_check():
     except Exception:
         pass
 
-    overall_status = "healthy" if all(v == "healthy" for v in results.values()) else "degraded"
+    # 4. S0.6: Test LLM Status
+    llm_healthy = await llm_service.health_check()
+    provider = "openai" if llm_service.is_openai else "ollama"
+    mode = "cloud" if llm_service.is_openai else "local"
+
+    overall_status = "healthy" if all(v == "healthy" for v in results.values()) and llm_healthy else "degraded"
     
     return {
         "status": overall_status,
-        "services": results
+        "services": results,
+        "llm": {
+            "model": settings.DEFAULT_LLM_MODEL,
+            "embedding_model": settings.DEFAULT_EMBEDDING_MODEL,
+            "provider": provider,
+            "mode": mode,
+            "healthy": llm_healthy
+        }
     }
 
 
