@@ -23,7 +23,7 @@ async def test_get_graph_stats(async_client: AsyncClient, processed_document):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["entity_count"] >= 1
+    assert data["entity_count"] == 1
     assert "relation_count" in data
 
 @pytest.mark.asyncio

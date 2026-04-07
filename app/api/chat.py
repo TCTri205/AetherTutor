@@ -9,10 +9,11 @@ from ..repositories.graph_repo import GraphRepository
 from ..core.retriever import Retriever
 from ..services.chat_service import ChatService
 from ..schemas.chat import ChatStreamRequest, ConversationRead, MessageRead, ConversationDetail, MessageResponse
+from ..constants import RATE_LIMIT_CONVERSATION_CREATE, RATE_LIMIT_CHAT_STREAM
+from .limiter import limiter
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Dependency helpers
 async def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
     chat_repo = ChatRepository(db)
     graph_repo = GraphRepository(db)
@@ -20,6 +21,7 @@ async def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
     return ChatService(chat_repo, retriever)
 
 @router.post("/conversations/{document_id}", response_model=ConversationRead)
+@limiter.limit(RATE_LIMIT_CONVERSATION_CREATE)
 async def create_conversation(
     request: Request,
     document_id: uuid.UUID,
@@ -27,10 +29,8 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db)
 ):
     """Tạo một cuộc hội thoại mới cho tài liệu cụ thể."""
-    limiter = request.app.state.limiter
-    async with limiter.limit("20/minute", request):
-        chat_repo = ChatRepository(db)
-        return await chat_repo.create_conversation(document_id, title)
+    chat_repo = ChatRepository(db)
+    return await chat_repo.create_conversation(document_id, title)
 
 @router.get("/conversations/{document_id}", response_model=List[ConversationRead])
 async def list_conversations(
@@ -42,6 +42,7 @@ async def list_conversations(
     return await chat_repo.list_conversations(document_id)
 
 @router.post("/stream")
+@limiter.limit(RATE_LIMIT_CHAT_STREAM)
 async def chat_stream(
     request: Request,
     stream_request: ChatStreamRequest,
@@ -52,27 +53,23 @@ async def chat_stream(
     Endpoint chính cho trò chuyện streaming (SSE).
     Hỗ trợ chế độ Socratic và Feynman.
     """
-    limiter = request.app.state.limiter
-    async with limiter.limit("60/minute", request):
-        # 1. Khởi tạo/Lấy conversation_id
-        conv_id = await service.get_or_create_conversation(stream_request.document_id, stream_request.conversation_id)
+    conv_id = await service.get_or_create_conversation(stream_request.document_id, stream_request.conversation_id)
 
-        # 2. Trả về stream SSE
-        return StreamingResponse(
-            service.chat_stream(
-                conversation_id=conv_id,
-                document_id=stream_request.document_id,
-                user_query=stream_request.message,
-                background_tasks=background_tasks,
-                mode=stream_request.mode
-            ),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
+    return StreamingResponse(
+        service.chat_stream(
+            conversation_id=conv_id,
+            document_id=stream_request.document_id,
+            user_query=stream_request.message,
+            background_tasks=background_tasks,
+            mode=stream_request.mode
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @router.get("/history/{conversation_id}", response_model=ConversationDetail)
 async def get_chat_history(
@@ -84,9 +81,8 @@ async def get_chat_history(
     conv = await chat_repo.get_conversation(conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     messages = await chat_repo.get_messages(conversation_id)
-    # Convert to schema
     return ConversationDetail(
         id=conv.id,
         document_id=conv.document_id,
@@ -117,22 +113,21 @@ async def socratic_chat_legacy(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Endpoint cũ để giữ tương thích ngược. 
+    Endpoint cũ để giữ tương thích ngược.
     Không hỗ trợ stream, trả về kết quả cuối cùng.
     """
     chat_repo = ChatRepository(db)
     graph_repo = GraphRepository(db)
     retriever = Retriever(graph_repo)
-    
+
     doc_uuid = uuid.UUID(document_id)
     context, _ = await retriever.retrieve(message, document_id)
     context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
-    
-    # Simple generation without complex state management for legacy
-    prompt = f"Mode: {mode}\nContext: {context_str}\nUser: {message}"
+
     from ..services.llm_service import llm_service
+    prompt = f"Mode: {mode}\nContext: {context_str}\nUser: {message}"
     response = await llm_service.get_chat_completion([{"role": "user", "content": prompt}])
-    
+
     return {
         "response": response.choices[0].message.content,
         "context_used": context

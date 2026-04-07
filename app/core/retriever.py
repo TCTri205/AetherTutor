@@ -4,6 +4,7 @@ from ..services.chroma_client import chroma_client
 from ..repositories.graph_repo import GraphRepository
 from ..services.llm_service import llm_service
 from ..config import settings
+from ..constants import RETRIEVAL_TOP_K_CHUNKS, RETRIEVAL_TOP_K_ENTITIES
 
 class Retriever:
     """
@@ -15,7 +16,7 @@ class Retriever:
     def __init__(self, graph_repo: GraphRepository):
         self.graph_repo = graph_repo
 
-    async def retrieve(self, query: str, document_id: str, top_k: int = 5) -> tuple[List[Dict[str, Any]], List[str]]:
+    async def retrieve(self, query: str, document_id: str, top_k: int = RETRIEVAL_TOP_K_CHUNKS) -> tuple[List[Dict[str, Any]], List[str]]:
         """
         Dual-level retrieval from ChromaDB and SQL Graph.
         Returns: (context list, found entity names)
@@ -29,7 +30,7 @@ class Retriever:
             n_results=top_k,
             where={"document_id": document_id}
         )
-        
+
         for i in range(len(chunks_res['ids'][0])):
             context.append({
                 "type": "chunk",
@@ -40,7 +41,7 @@ class Retriever:
         # 2. Vector Search: Entities mentioned in query
         entities_res = chroma_client.entities_collection.query(
             query_texts=[query],
-            n_results=3,
+            n_results=RETRIEVAL_TOP_K_ENTITIES,
             where={"document_id": document_id}
         )
         

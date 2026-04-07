@@ -1,6 +1,7 @@
 import pytest
 import asyncio
 import uuid
+import hashlib
 from typing import AsyncGenerator, Generator
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -11,8 +12,13 @@ from app.config import settings
 from tests.mocks.llm_mock import MockLLMService
 
 # --- Database Setup for Testing ---
-# Chúng ta sử dụng database hiện tại nhưng với cơ chế auto-rollback cho mỗi test
-# Nếu muốn dùng DB riêng, hãy set DATABASE_URL trong môi trường test
+
+# Safety guard: refuse to run tests against production database
+if settings.APP_ENV == "production" and "test" not in settings.DB_NAME.lower():
+    raise RuntimeError(
+        "Refusing to run tests against production database. "
+        "Set DB_NAME to contain 'test' or APP_ENV != 'production'."
+    )
 
 test_engine = create_async_engine(settings.DATABASE_URL, future=True)
 TestAsyncSessionLocal = async_sessionmaker(
@@ -31,18 +37,40 @@ def event_loop() -> Generator:
 @pytest.fixture
 async def test_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Fixture cho database session.
-    Tự động rollback sau mỗi test để giữ database sạch.
-    NOTE: Không dùng autouse=True để tránh conflict với unit tests không cần DB.
-    Integration tests sẽ gọi fixture này tường minh.
-    """
-    async with test_engine.begin() as conn:
-        # Tùy chọn: Create tables nếu chưa có (thường đã có qua alembic)
-        # await conn.run_sync(Base.metadata.create_all)
+    Fixture cho database session với connection-level transaction isolation.
+    Mỗi test nhận một connection riêng, bắt đầu transaction ở đầu test
+    và rollback toàn bộ ở cuối — đảm bảo không rò rỉ dữ liệu giữa các test.
+    Code trong test vẫn có thể gọi commit(), nhưng outer rollback sẽ undo tất cả.
 
+    Trước khi yield, cleanup dữ liệu từ test trước (nếu còn sót) để
+    đảm bảo test isolation.
+    Sau khi teardown, dispose engine pool để giải phóng stale asyncpg
+    connections trên Windows Proactor Event Loop.
+    """
+    from sqlalchemy import delete
+    from app.models.document import Document
+
+    # Cleanup leftover test data from previous tests (safety net).
+    # FK constraints are CASCADE, so deleting documents cleans up
+    # graph_entities, graph_relations, conversations, messages automatically.
+    async with test_engine.connect() as conn:
+        await conn.execute(delete(Document))
+        await conn.commit()
+
+    async with test_engine.begin() as conn:
         async with TestAsyncSessionLocal(bind=conn) as session:
-            yield session
-            await session.rollback()
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await conn.rollback()
+                await session.close()
+
+    # Dispose pool sau mỗi test để tránh stale connections trên Windows.
+    # Đây là trade-off: chậm hơn nhưng đảm bảo stability.
+    await test_engine.dispose()
 
 @pytest.fixture
 async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
@@ -93,8 +121,12 @@ async def integration_test_db() -> AsyncGenerator[AsyncSession, None]:
     """
     async with test_engine.begin() as conn:
         async with TestAsyncSessionLocal(bind=conn) as session:
-            yield session
-            await session.rollback()
+            try:
+                yield session
+            finally:
+                await session.rollback()
+                await session.close()
+        await test_engine.dispose()
 
 # --- Data Fixtures ---
 
@@ -109,29 +141,28 @@ async def processed_document(test_db: AsyncSession):
     Fixture tạo sẵn một document đã hoàn thành (COMPLETED) kèm Graph data mẫu.
     """
     from app.models.document import Document, DocumentStatus, ProcessingStep
-    from app.models.graph import Entity, Relation
-    
+    from app.models.graph import GraphEntity, GraphRelation
+
     doc_id = uuid.uuid4()
     doc = Document(
         id=doc_id,
         filename="test_manual.pdf",
         file_path="/tmp/test_manual.pdf",
+        content_hash=hashlib.sha256(b"test_manual").hexdigest(),
         status=DocumentStatus.COMPLETED,
         processing_step=ProcessingStep.COMPLETED,
-        entity_count=1,
-        relation_count=0
     )
     test_db.add(doc)
-    
+
     # Thêm entity mẫu
-    entity = Entity(
+    entity = GraphEntity(
         document_id=doc_id,
         canonical_name="Albert Einstein",
         entity_type="PERSON",
         description="Nhà vật lý lý thuyết người Đức."
     )
     test_db.add(entity)
-    
+
     await test_db.commit()
     await test_db.refresh(doc)
     return doc

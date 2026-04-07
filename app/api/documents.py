@@ -12,19 +12,23 @@ from ..core.pipeline import LightRAGPipeline
 from ..core.entity_extractor import EntityExtractor
 from ..core.retriever import Retriever
 from ..schemas.lightrag import (
-    DocumentIngestRequest, 
-    DocumentUploadResponse, 
+    DocumentIngestRequest,
+    DocumentUploadResponse,
     DocumentDetail,
     ExtractionResult
 )
 from ..services.document_service import DocumentService
 from ..services.llm_service import llm_service
+from ..constants import RATE_LIMIT_DOCUMENT_UPLOAD, RATE_LIMIT_DOCUMENT_DELETE
+from .limiter import limiter
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
 
 def get_doc_service(db: AsyncSession = Depends(get_db), request: Request = None) -> DocumentService:
     arq_pool = request.app.state.arq_pool if request else None
     return DocumentService(db, arq_pool)
+
 
 @router.post("/test-ingest")
 async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends(get_db)):
@@ -47,39 +51,36 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
     )
 
     try:
-        # 1. Tạo document record
         import hashlib
         content_hash = hashlib.sha256(request.content.encode()).hexdigest()
         doc = await doc_repo.create(request.filename, content_hash)
-        
-        # 2. Chạy pipeline đồng bộ
+
         await pipeline.ingest_text(doc.id, request.content)
         await db.commit()
-        
+
         return {"document_id": str(doc.id), "status": "COMPLETED"}
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 from fastapi.responses import JSONResponse
 
+
 @router.post("/upload")
+@limiter.limit(RATE_LIMIT_DOCUMENT_UPLOAD)
 async def upload_document(
     request: Request,
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     service: DocumentService = Depends(get_doc_service)
 ):
     """
     Tải lên file PDF và bắt đầu luồng xử lý tự động (Async).
     Trả về 202 Accepted cho file mới, 200 OK cho file đã tồn tại.
     """
-    limiter = request.app.state.limiter
-    async with limiter.limit("5/minute", request):
-        doc, is_duplicate = await service.upload_document(file)
-    
-    
+    doc, is_duplicate = await service.upload_document(file)
+
     if is_duplicate:
-        # File đã tồn tại — trả về 200 OK, frontend KHÔNG cần polling
         return JSONResponse(
             status_code=200,
             content={
@@ -90,7 +91,6 @@ async def upload_document(
             }
         )
     else:
-        # File mới — trả về 202 Accepted, frontend CẦN polling
         return JSONResponse(
             status_code=202,
             content={
@@ -101,39 +101,35 @@ async def upload_document(
             }
         )
 
+
 @router.get("/", response_model=List[DocumentDetail])
 async def list_documents(
-    skip: int = 0, 
-    limit: int = 100, 
+    skip: int = 0,
+    limit: int = 100,
     service: DocumentService = Depends(get_doc_service)
 ):
-    """
-    Liệt kê danh sách tài liệu và trạng thái xử lý.
-    """
+    """Liệt kê danh sách tài liệu và trạng thái xử lý."""
     docs_data = await service.list_documents(skip, limit)
     return [DocumentDetail(**d) for d in docs_data]
 
+
 @router.get("/{document_id}", response_model=DocumentDetail)
 async def get_document_status(
-    document_id: uuid.UUID, 
+    document_id: uuid.UUID,
     service: DocumentService = Depends(get_doc_service)
 ):
-    """
-    Lấy thông tin chi tiết và trạng thái của một tài liệu cụ thể.
-    """
+    """Lấy thông tin chi tiết và trạng thái của một tài liệu cụ thể."""
     doc_data = await service.get_document_status(document_id)
     return DocumentDetail(**doc_data)
 
+
 @router.delete("/{document_id}")
+@limiter.limit(RATE_LIMIT_DOCUMENT_DELETE)
 async def delete_document(
     request: Request,
-    document_id: uuid.UUID, 
+    document_id: uuid.UUID,
     service: DocumentService = Depends(get_doc_service)
 ):
-    """
-    Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File).
-    """
-    limiter = request.app.state.limiter
-    async with limiter.limit("20/minute", request):
-        await service.delete_document(document_id)
+    """Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File)."""
+    await service.delete_document(document_id)
     return {"message": f"Tài liệu {document_id} đã được xóa hoàn toàn khỏi hệ thống."}

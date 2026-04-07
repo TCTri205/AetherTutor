@@ -13,6 +13,10 @@ from ..services.chroma_client import chroma_client
 from .entity_extractor import EntityExtractor
 from .retriever import Retriever
 from ..schemas.lightrag import ExtractionResult
+from ..constants import (
+    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE,
+    ENTITY_CONFIDENCE_DEFAULT
+)
 
 class LightRAGPipeline(LightRAG):
     def __init__(
@@ -33,22 +37,43 @@ class LightRAGPipeline(LightRAG):
     def _calculate_content_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-    def _chunk_text(self, text: str, chunk_size: int = 800, chunk_overlap: int = 150) -> List[str]:
+    def _chunk_text(self, text: str, chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHUNK_OVERLAP) -> List[str]:
         """
         Simple fixed-size chunking with character overlap.
         """
         chunks = []
         if len(text) <= chunk_size:
             return [text]
-        
+
         start = 0
         while start < len(text):
             end = start + chunk_size
             chunk = text[start:end]
-            if len(chunk) >= 50: # Drop tiny chunks
+            if len(chunk) >= MIN_CHUNK_SIZE: # Drop tiny chunks
                 chunks.append(chunk)
             start += chunk_size - chunk_overlap
         return chunks
+
+    @staticmethod
+    def _deduplicate_relations(relations: List[Any]) -> List[Any]:
+        """
+        Deduplicate relations by (source, target, relation_type) key.
+        Keeps the relation with the longest description for richer context.
+        """
+        seen: dict[tuple, Any] = {}
+        for r in relations:
+            key = (r.source, r.target, r.relation_type)
+            if key not in seen or len(r.description) > len(seen[key].description):
+                seen[key] = r
+        return list(seen.values())
+
+    async def process_document(self, text: str, document_id: str) -> None:
+        """
+        Implement abstract method from LightRAG interface.
+        Wrapper around ingest_text for compatibility.
+        """
+        doc_id = uuid.UUID(document_id)
+        await self.ingest_text(doc_id, text)
 
     async def ingest_text(self, doc_id: uuid.UUID, text: str) -> str:
         """
@@ -111,7 +136,8 @@ class LightRAGPipeline(LightRAG):
 
             # Tối ưu hóa: Loại bỏ các thực thể trùng lặp bằng cách gộp chung (Deduplication)
             dedup_entities = self.extractor.deduplicate_entities(all_entities)
-            
+            dedup_relations = self._deduplicate_relations(all_relations)
+
             # Chuẩn bị dữ liệu để lưu vào PostgreSQL
             entity_data_list = [
                 {
@@ -127,7 +153,7 @@ class LightRAGPipeline(LightRAG):
                     "target_entity": r.target,
                     "relation_type": r.relation_type,
                     "description": r.description
-                } for r in all_relations
+                } for r in dedup_relations
             ]
 
             # Lưu Graph vào SQL

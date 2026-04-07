@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 from ..database import get_db
 from ..repositories.graph_repo import GraphRepository
+from ..repositories.document_repo import DocumentRepository
 from ..core.retriever import Retriever
 from ..services.llm_service import llm_service
 from ..schemas.lightrag import (
@@ -47,6 +48,12 @@ async def get_document_graph(
     Lấy toàn bộ dữ liệu đồ thị của một tài liệu để hiển thị lên UI (Visualization).
     Trả về danh sách nodes và edges.
     """
+    # Validate document tồn tại
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
     repo = GraphRepository(db)
     entities = await repo.get_all_entities(document_id)
     relations = await repo.get_all_relations(document_id)
@@ -83,6 +90,12 @@ async def get_graph_stats(
     """
     Lấy thống kê về số lượng thực thể và quan hệ đã trích xuất được từ tài liệu.
     """
+    # Validate document tồn tại
+    doc_repo = DocumentRepository(db)
+    doc = await doc_repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
     repo = GraphRepository(db)
     e_count = await repo.count_entities(document_id)
     r_count = await repo.count_relations(document_id)

@@ -17,6 +17,7 @@ from ..core.retriever import Retriever
 from ..core.pipeline import LightRAGPipeline
 from ..core.exceptions import PermanentProcessingError
 from .queue import redis_settings
+from ..constants import WORKER_JOB_TIMEOUT_SECONDS, WORKER_MAX_RETRIES
 
 logger = logging.getLogger(__name__)
 
@@ -91,5 +92,5 @@ async def process_document_task(ctx: Any, doc_id_str: str):
 class WorkerSettings:
     functions = [process_document_task]
     redis_settings = redis_settings
-    job_timeout = 600 # 10 phút cho mỗi tài liệu
-    max_retries = 3
+    job_timeout = WORKER_JOB_TIMEOUT_SECONDS
+    max_retries = WORKER_MAX_RETRIES

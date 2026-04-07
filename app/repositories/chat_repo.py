@@ -3,10 +3,11 @@ from typing import Optional, List
 from sqlalchemy import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.conversation import Conversation, Message, MessageStatus
+from .base import BaseRepository
 
-class ChatRepository:
+class ChatRepository(BaseRepository[Conversation]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(session, Conversation)
 
     async def create_conversation(self, document_id: uuid.UUID, title: str = "Cuộc hội thoại mới") -> Conversation:
         conv = Conversation(
@@ -18,10 +19,7 @@ class ChatRepository:
         return conv
 
     async def get_conversation(self, conversation_id: uuid.UUID) -> Optional[Conversation]:
-        result = await self.session.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
-        )
-        return result.scalars().first()
+        return await self.get_by_id(conversation_id)
 
     async def list_conversations(self, document_id: uuid.UUID) -> List[Conversation]:
         result = await self.session.execute(
@@ -32,12 +30,7 @@ class ChatRepository:
         return list(result.scalars().all())
 
     async def delete_conversation(self, conversation_id: uuid.UUID) -> bool:
-        conv = await self.get_conversation(conversation_id)
-        if conv:
-            await self.session.delete(conv)
-            await self.session.flush()
-            return True
-        return False
+        return await self.delete(conversation_id)
 
     async def add_message(
         self,
@@ -105,15 +98,17 @@ class ChatRepository:
         return list(result.scalars().all())
     
     async def get_last_n_messages(self, conversation_id: uuid.UUID, n: int = 10) -> List[Message]:
-        # Get last n messages, but in correct sequence order
-        subquery = (
+        """
+        Lấy n tin nhắn gần nhất theo đúng thứ tự sequence.
+        Tối ưu: Fetch DESC rồi reverse trong Python thay vì dùng subquery phức tạp.
+        """
+        # Fetch last n messages in descending order
+        result = await self.session.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.sequence_index.desc())
             .limit(n)
-            .subquery()
         )
-        result = await self.session.execute(
-            select(Message).from_statement(select(subquery).order_by(subquery.c.sequence_index.asc()))
-        )
-        return list(result.scalars().all())
+        messages = list(result.scalars().all())
+        # Reverse để có thứ tự tăng dần (chronological order)
+        return list(reversed(messages))

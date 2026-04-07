@@ -4,68 +4,81 @@ from sqlalchemy import select, delete, or_, func
 from ..models.graph import GraphEntity, GraphRelation
 from typing import List, Dict, Any
 import uuid
+from .base import BaseRepository
 
-class GraphRepository:
+class GraphRepository(BaseRepository[GraphEntity]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(session, GraphEntity)
 
     async def bulk_upsert_entities(self, entities: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphEntity]:
         """
-        Upsert entities for a document.
-        If canonical_name already exists for this document, update description and confidence.
+        Bulk upsert entities cho một document bằng single INSERT ... ON CONFLICT.
+        Tối ưu: Thay vì N câu lệnh riêng lẻ, dùng 1 câu lệnh bulk.
         """
         if not entities:
             return []
 
-        results = []
-        for entity_data in entities:
-            stmt = insert(GraphEntity).values(
-                document_id=document_id,
-                canonical_name=entity_data["canonical_name"],
-                entity_type=entity_data["entity_type"],
-                description=entity_data["description"],
-                confidence=entity_data.get("confidence", 0.5)
-            ).on_conflict_do_update(
-                constraint="uq_document_entity_name",
-                set_={
-                    "description": entity_data["description"],
-                    "entity_type": entity_data["entity_type"],
-                    "confidence": entity_data.get("confidence", 0.5)
-                }
-            ).returning(GraphEntity)
-            res = await self.session.execute(stmt)
-            results.append(res.scalar_one())
+        # Thêm document_id vào từng entity
+        enriched_entities = [
+            {
+                "document_id": document_id,
+                **entity_data
+            }
+            for entity_data in entities
+        ]
+
+        stmt = insert(GraphEntity).values(enriched_entities).on_conflict_do_update(
+            constraint="uq_document_entity_name",
+            set_={
+                "description": insert(GraphEntity).excluded.description,
+                "entity_type": insert(GraphEntity).excluded.entity_type,
+                "confidence": insert(GraphEntity).excluded.confidence,
+            }
+        ).returning(GraphEntity)
         
+        result = await self.session.execute(stmt)
         await self.session.flush()
-        return results
+        return list(result.scalars().all())
 
     async def bulk_upsert_relations(self, relations: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphRelation]:
         """
-        Upsert relations for a document.
+        Bulk upsert relations cho một document bằng single INSERT ... ON CONFLICT.
+        Tối ưu: Thay vì N câu lệnh riêng lẻ, dùng 1 câu lệnh bulk.
+
+        Deduplicate input bằng conflict key để tránh PostgreSQL error:
+        "ON CONFLICT DO UPDATE command cannot affect row a second time".
         """
         if not relations:
             return []
 
-        results = []
-        for rel_data in relations:
-            stmt = insert(GraphRelation).values(
-                document_id=document_id,
-                source_entity=rel_data["source_entity"],
-                target_entity=rel_data["target_entity"],
-                relation_type=rel_data["relation_type"],
-                description=rel_data["description"]
-            ).on_conflict_do_update(
-                constraint="uq_document_relation",
-                set_={
-                    "description": rel_data["description"],
-                    "relation_type": rel_data["relation_type"]
-                }
-            ).returning(GraphRelation)
-            res = await self.session.execute(stmt)
-            results.append(res.scalar_one())
-        
+        # Thêm document_id vào từng relation
+        enriched_relations = [
+            {
+                "document_id": document_id,
+                **rel_data
+            }
+            for rel_data in relations
+        ]
+
+        # Deduplicate: giữ record cuối cùng cho mỗi conflict key.
+        # Conflict constraint: uq_document_relation(document_id, source_entity, target_entity, relation_type)
+        seen: dict[tuple, dict] = {}
+        for rel in enriched_relations:
+            key = (rel["document_id"], rel["source_entity"], rel["target_entity"], rel["relation_type"])
+            seen[key] = rel
+        deduped = list(seen.values())
+
+        stmt = insert(GraphRelation).values(deduped).on_conflict_do_update(
+            constraint="uq_document_relation",
+            set_={
+                "description": insert(GraphRelation).excluded.description,
+                "relation_type": insert(GraphRelation).excluded.relation_type,
+            }
+        ).returning(GraphRelation)
+
+        result = await self.session.execute(stmt)
         await self.session.flush()
-        return results
+        return list(result.scalars().all())
 
     async def get_all_entities(self, document_id: uuid.UUID) -> List[GraphEntity]:
         stmt = select(GraphEntity).where(GraphEntity.document_id == document_id)

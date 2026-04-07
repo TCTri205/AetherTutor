@@ -45,7 +45,7 @@ async def test_chat_stream_sse(async_client: AsyncClient, processed_document):
     # Sử dụng stream context manager của httpx
     async with async_client.stream("POST", "/api/v1/chat/stream", json=payload) as response:
         assert response.status_code == 200
-        assert response.headers["content-type"] == "text/event-stream"
+        assert response.headers["content-type"].startswith("text/event-stream")
         
         events = []
         async for line in response.aiter_lines():

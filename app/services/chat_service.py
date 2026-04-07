@@ -9,6 +9,7 @@ from ..models.conversation import MessageStatus, Conversation
 from ..repositories.chat_repo import ChatRepository
 from ..core.retriever import Retriever
 from ..services.llm_service import llm_service
+from ..constants import RETRIEVAL_HISTORY_LENGTH, LLM_STREAM_TIMEOUT_SECONDS, LLM_MAX_TOKENS_TITLE_GENERATION
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class ChatService:
 
         # 2. Get Recent History (last 10 messages, BEFORE creating PENDING)
         # This ensures we don't accidentally include the PENDING message we're about to create
-        history = await self.chat_repo.get_last_n_messages(conversation_id, n=10)
+        history = await self.chat_repo.get_last_n_messages(conversation_id, n=RETRIEVAL_HISTORY_LENGTH)
 
         # 3. Retrieve Context (Hybrid: Top-k chunks/graph)
         context, found_entities = await self.retriever.retrieve(user_query, str(document_id))
@@ -87,7 +88,7 @@ class ChatService:
                     yield chunk
             
             try:
-                async with asyncio.timeout(120):  # 2 minutes timeout
+                async with asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS):  # 2 minutes timeout
                     async for chunk in stream_with_timeout():
                         if chunk.choices and chunk.choices[0].delta.content:
                             delta = chunk.choices[0].delta.content
@@ -95,7 +96,7 @@ class ChatService:
                             yield f"event: chunk\ndata: {json.dumps({'delta': delta})}\n\n"
             except asyncio.TimeoutError:
                 logger.error(f"Stream timeout after {len(full_content)} chars")
-                raise Exception("LLM stream timed out after 120 seconds")
+                raise Exception(f"LLM stream timed out after {LLM_STREAM_TIMEOUT_SECONDS} seconds")
 
             # 8. Commit 3 (Success): Update message to COMPLETED
             await self.chat_repo.update_message(
@@ -178,7 +179,7 @@ class ChatService:
                 prompt = f"Generate a very short title (max 5 words) for a conversation that starts with: '{first_query}'"
                 response = await llm_service.get_chat_completion([
                     {"role": "user", "content": prompt}
-                ], max_tokens=20)
+                ], max_tokens=LLM_MAX_TOKENS_TITLE_GENERATION)
 
                 title = response.choices[0].message.content.strip().strip('"')
                 await chat_repo.session.execute(

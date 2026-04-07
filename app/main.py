@@ -2,23 +2,35 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .api import documents, chat, graph
+from .api.limiter import limiter
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
 from .services.llm_service import llm_service
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from .logging_config import setup_logging, get_logger
+from .middleware import RequestLoggingMiddleware
 
-limiter = Limiter(key_func=get_remote_address)
+# Setup logging
+setup_logging(
+    level="DEBUG" if settings.DEBUG else "INFO",
+    json_format=settings.APP_ENV == "production"
+)
+
+logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Khởi tạo ARQ Pool
+    # Startup
+    logger.info("Starting AetherTutor application...")
     app.state.arq_pool = await get_redis_pool()
+    logger.info("ARQ Redis pool initialized")
     yield
-    # Đóng ARQ Pool khi tắt app
+    # Shutdown
+    logger.info("Shutting down AetherTutor application...")
     if app.state.arq_pool:
         await app.state.arq_pool.close()
+        logger.info("ARQ Redis pool closed")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -27,10 +39,8 @@ app = FastAPI(
     docs_url="/docs",
     lifespan=lifespan
 )
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# S2.1b: Hardened CORS Middleware
+# Add CORS middleware first (innermost in stack)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
@@ -38,6 +48,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request logging middleware last (outermost in stack — logs ALL requests including CORS preflight)
+app.add_middleware(RequestLoggingMiddleware)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.get("/")
 async def root():

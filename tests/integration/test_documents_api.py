@@ -47,12 +47,12 @@ async def test_get_document_status(async_client: AsyncClient, processed_document
     """Test lấy trạng thái tài liệu cụ thể"""
     doc_id = str(processed_document.id)
     response = await async_client.get(f"/api/v1/documents/{doc_id}")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == doc_id
     assert data["status"] == "COMPLETED"
-    assert data["entity_count"] == 10
+    assert data["entity_count"] == 1
 
 @pytest.mark.asyncio
 async def test_delete_document(async_client: AsyncClient, processed_document):

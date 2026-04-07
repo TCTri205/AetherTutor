@@ -1,8 +1,17 @@
 from openai import AsyncOpenAI
 from typing import Optional, List, Dict, Any, Type
 import json
+import logging
+import asyncio
+import random
 from pydantic import BaseModel, ValidationError
 from ..config import settings
+from ..constants import (
+    LLM_TEMPERATURE_CHAT, LLM_TEMPERATURE_EXTRACTION,
+    LLM_MAX_RETRIES
+)
+
+logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
@@ -30,14 +39,14 @@ class LLMService:
             await self.client.models.list()
             return True
         except Exception as e:
-            print(f"LLM Health Check failed: {e}")
+            logger.error(f"LLM Health Check failed: {e}")
             return False
 
     async def get_chat_completion(
-        self, 
-        messages: List[Dict[str, str]], 
+        self,
+        messages: List[Dict[str, str]],
         model: str = settings.DEFAULT_LLM_MODEL,
-        temperature: float = 0.7,
+        temperature: float = LLM_TEMPERATURE_CHAT,
         max_tokens: Optional[int] = None,
         stream: bool = False
     ) -> Any:
@@ -54,7 +63,7 @@ class LLMService:
         self,
         messages: List[Dict[str, str]],
         model: str = settings.DEFAULT_LLM_MODEL,
-        temperature: float = 0.7,
+        temperature: float = LLM_TEMPERATURE_CHAT,
         max_tokens: Optional[int] = None,
     ):
         """
@@ -73,11 +82,11 @@ class LLMService:
         prompt: str,
         response_model: Type[BaseModel],
         model: str = settings.DEFAULT_LLM_MODEL,
-        max_retries: int = 3
+        max_retries: int = LLM_MAX_RETRIES
     ) -> Optional[BaseModel]:
         """
         Calls the LLM with a prompt and enforces JSON format.
-        Retries on JSON decoding errors.
+        Uses exponential backoff with jitter for retries.
         """
         for attempt in range(max_retries):
             try:
@@ -88,7 +97,7 @@ class LLMService:
                         {"role": "user", "content": prompt}
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.1
+                    temperature=LLM_TEMPERATURE_EXTRACTION
                 )
                 
                 raw_content = response.choices[0].message.content
@@ -99,11 +108,17 @@ class LLMService:
                 return response_model.model_validate(data)
                 
             except (json.JSONDecodeError, ValueError, ValidationError) as e:
-                print(f"Extraction attempt {attempt + 1} failed: {e}")
+                logger.warning(f"Extraction attempt {attempt + 1} failed: {e}")
                 if attempt == max_retries - 1:
                     return None
+                
+                # Exponential backoff with jitter
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                logger.info(f"Retrying in {wait_time:.2f} seconds...")
+                await asyncio.sleep(wait_time)
+                
             except Exception as e:
-                print(f"Unexpected error during extraction: {e}")
+                logger.error(f"Unexpected error during extraction: {e}")
                 return None
         
         return None

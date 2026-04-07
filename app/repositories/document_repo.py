@@ -3,10 +3,11 @@ from sqlalchemy import select
 from ..models.document import Document, DocumentStatus, ProcessingStep
 from typing import Optional
 import uuid
+from .base import BaseRepository
 
-class DocumentRepository:
+class DocumentRepository(BaseRepository[Document]):
     def __init__(self, session: AsyncSession):
-        self.session = session
+        super().__init__(session, Document)
 
     async def create(self, filename: str, content_hash: str) -> Document:
         doc = Document(
@@ -32,10 +33,7 @@ class DocumentRepository:
         return result.scalars().first()
 
     async def get_by_id(self, document_id: uuid.UUID) -> Optional[Document]:
-        result = await self.session.execute(
-            select(Document).where(Document.id == document_id)
-        )
-        return result.scalars().first()
+        return await super().get_by_id(document_id)
 
     async def update_status(self, document_id: uuid.UUID, status: DocumentStatus, error_message: Optional[str] = None):
         doc = await self.get_by_id(document_id)
@@ -63,14 +61,9 @@ class DocumentRepository:
 
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Document]:
         result = await self.session.execute(
-            select(Document).offset(skip).limit(limit).order_by(Document.created_at.desc())
+            select(self.model).order_by(self.model.created_at.desc()).offset(skip).limit(limit)
         )
         return list(result.scalars().all())
 
     async def delete(self, document_id: uuid.UUID) -> bool:
-        doc = await self.get_by_id(document_id)
-        if doc:
-            await self.session.delete(doc)
-            await self.session.flush()
-            return True
-        return False
+        return await super().delete(document_id)

@@ -1,27 +1,30 @@
 import pytest
 import uuid
+import tempfile
+import os
+import sys
 from app.worker.tasks import process_document_task
 from app.models.document import DocumentStatus, Document
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="asyncpg Proactor event loop incompatibility on Windows")
 async def test_worker_process_document_success(test_db: AsyncSession, sample_pdf_bytes: bytes):
     """
     Test worker xử lý tài liệu thành công.
     Dùng Mock LLM (auto-patched via conftest).
     """
     from app.repositories.document_repo import DocumentRepository
-    import os
-    
+
     # 1. Tạo document PENDING trong DB
     doc_repo = DocumentRepository(test_db)
     doc = await doc_repo.create("worker_test.pdf", "somehash")
     doc_id = doc.id
-    
-    # Giả lập file vật lý tồn tại
-    file_path = f"/tmp/{doc_id}.pdf"
-    os.makedirs("/tmp", exist_ok=True)
+
+    # Giả lập file vật lý tồn tại - sử dụng temp dir cross-platform
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, f"{doc_id}.pdf")
     with open(file_path, "wb") as f:
         f.write(sample_pdf_bytes)
     
@@ -46,6 +49,7 @@ async def test_worker_process_document_success(test_db: AsyncSession, sample_pdf
         os.remove(file_path)
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="asyncpg Proactor event loop incompatibility on Windows")
 async def test_worker_process_nonexistent_document(test_db: AsyncSession):
     """Test worker xử lý document không tồn tại -> Log error và thoát êm"""
     random_id = str(uuid.uuid4())
