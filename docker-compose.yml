@@ -89,6 +89,7 @@ services:
       - DATABASE_HOST=db
       - REDIS_HOST=redis
       - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
