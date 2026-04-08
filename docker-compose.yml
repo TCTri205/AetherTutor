@@ -62,7 +62,7 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
     mem_limit: 512mb
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/heartbeat')"]
       interval: 30s
       timeout: 10s
       retries: 3
