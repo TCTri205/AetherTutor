@@ -32,13 +32,14 @@ COPY app/ app/
 
 # Tạo non-root user để chạy ứng dụng
 RUN groupadd --system --gid 1001 appuser && \
-    useradd --system --uid 1001 --gid appuser --shell /bin/bash appuser && \
+    useradd --system --uid 1001 --gid appuser --shell /bin/bash --create-home appuser && \
     mkdir -p /app/uploads && \
     chown -R appuser:appuser /app
 USER appuser
 
 # Biến môi trường
 ENV PYTHONPATH=/app
+ENV HOME=/app
 ENV APP_ENV=production
 
 # Healthcheck
