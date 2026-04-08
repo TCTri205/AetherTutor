@@ -92,8 +92,8 @@ services:
       - CHROMA_PORT=8000
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
-      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+      - DEFAULT_LLM_MODEL=hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
     depends_on:
       db:
         condition: service_healthy
@@ -119,8 +119,8 @@ services:
       - CHROMA_HOST=chromadb
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
-      - DEFAULT_LLM_MODEL=${DEFAULT_LLM_MODEL:-hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M}
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+      - DEFAULT_LLM_MODEL=hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
     depends_on:
       - api
       - redis
