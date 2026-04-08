@@ -34,3 +34,4 @@ httpx>=0.24.0
 
 # Dev Tools
 pip-tools>=7.3.0
+ruff>=0.3.0

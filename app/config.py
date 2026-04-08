@@ -4,7 +4,7 @@ from typing import Optional
 class Settings(BaseSettings):
     # App Settings
     PROJECT_NAME: str = "AetherTutor"
-    DEBUG: bool = True
+    DEBUG: bool = False
     APP_ENV: str = "development"  # development | production
     
     # CORS & App URLs

@@ -9,8 +9,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-aethertutor}
-    ports:
-      - "5432:5432"
+    # Ports commented out for production — only internal access needed
+    # ports:
+    #   - "5432:5432"
     mem_limit: 256mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aethertutor}"]
@@ -32,8 +33,9 @@ services:
     image: redis:7-alpine
     container_name: aethertutor-redis
     restart: always
-    ports:
-      - "6379:6379"
+    # Ports commented out for production — only internal access needed
+    # ports:
+    #   - "6379:6379"
     mem_limit: 64mb
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -51,22 +53,22 @@ services:
       - aethertutor-net
 
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.5.0
     container_name: aethertutor-chromadb
     restart: always
-    ports:
-      - "8100:8000"
+    # Ports commented out for production — only internal access needed
+    # ports:
+    #   - "8100:8000"
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
     mem_limit: 512mb
-    # Healthcheck removed: chromadb image lacks curl/wget
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
-    #   interval: 30s
-    #   timeout: 10s
-    #   retries: 3
-    #   start_period: 10s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     volumes:
       - chroma_data:/chroma/persona
     logging:
@@ -78,10 +80,14 @@ services:
     build: .
     container_name: aethertutor-api
     restart: always
+    # Automatically run migrations before starting the API
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "8001:8000"
     environment:
       - APP_ENV=production
+      - DEBUG=false
       - DATABASE_HOST=db
       - REDIS_HOST=redis
       - CHROMA_HOST=chromadb
@@ -93,7 +99,7 @@ services:
       redis:
         condition: service_healthy
       chromadb:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
     networks:
@@ -106,12 +112,14 @@ services:
     command: ["arq", "app.worker.tasks.WorkerSettings"]
     environment:
       - APP_ENV=production
+      - DEBUG=false
       - DATABASE_HOST=db
       - REDIS_HOST=redis
       - CHROMA_HOST=chromadb
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
+      - api
       - redis
       - db
       - chromadb
@@ -124,7 +132,7 @@ services:
     build: 
       context: ./frontend
       args:
-        - VITE_API_URL=http://localhost:8001
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8001}
     container_name: aethertutor-ui
     restart: always
     ports:
