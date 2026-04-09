@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 7, 2026
-> **Status:** LAUNCHED (MVP Phase 6 Complete — Ready for Production deployment)
+> **Status:** LAUNCHED (MVP Sprint 6 Complete — Ready for Production deployment)
 
 ---
 
@@ -10,7 +10,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 
 ---
 
-## 1. Giai đoạn 1 (Foundation): Thiết lập nền tảng
+## 1. Stage 1 (Foundation): Thiết lập nền tảng
 
 > Thời điểm dự kiến: Quý 1 - 2026 | Mục tiêu: Xây dựng hạ tầng **LightRAG** và hệ thống Agent điều phối cơ bản.
 
@@ -24,7 +24,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 
 **MVP Scope:** Upload PDF → LightRAG Processing → Chat với AI
 
-## 2. Giai đoạn 2 (Intelligence): Thông minh hóa & Ghi nhớ
+## 2. Stage 2 (Intelligence): Thông minh hóa & Ghi nhớ
 
 > Thời điểm dự kiến: Quý 2 - 2026 | Mục tiêu: Tăng cường khả năng trích xuất tri thức và cá nhân hóa việc học.
 
@@ -34,7 +34,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [ ] Cải thiện kỹ năng RAG bằng cách giảm thiểu ảo giác của AI qua **LightRAG cross-verification**.
 - [ ] Multi-document reasoning (trả lời queries cần nhiều documents).
 
-## 3. Giai đoạn 3 (Visualization): Trực quan hóa & Multimedia
+## 3. Stage 3 (Visualization): Trực quan hóa & Multimedia
 
 > Thời điểm dự kiến: Quý 3 - 2026 | Mục tiêu: Mở rộng khả năng xử lý hình ảnh và video.
 
@@ -44,7 +44,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [ ] Tích hợp chỉnh sửa Mindmap/Flowchart trực tiếp trên UI.
 - [ ] Interactive graph editing capabilities.
 
-## 4. Giai đoạn 4 (Interactive UX): Nâng cấp trải nghiệm & Cộng đồng
+## 4. Stage 4 (Interactive UX): Nâng cấp trải nghiệm & Cộng đồng
 
 > Thời điểm dự kiến: Quý 4 - 2026 | Mục tiêu: Tối ưu hóa trải nghiệm người dùng và hỗ trợ làm việc nhóm.
 
@@ -60,10 +60,10 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 
 | Cột mốc | Mô tả | Trạng thái |
 | :--- | :--- | :--- |
-| **Pioneering** | Hoàn tất thiết kế và Research | 100% |
+| **Pioneering** | Hoàn tất thiết kế và Research | 100% ✅ |
 | **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming + Full Frontend UI | 100% ✅ |
 | **v0.1.1 (Refactoring)** | Code quality, performance, testing (+155% tests), production-ready | 100% ✅ |
-| **v0.2 (Pro)** | Visualization + SM-2 + Flashcards | 0% |
+| **v0.2 (Pro)** | Intelligence + SM-2 + Flashcards + Zettelkasten | 0% |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
 
@@ -71,7 +71,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 
 ## LightRAG Integration Timeline
 
-### Phase 1: Core Infrastructure & Local Setup (Week 1–2)
+### Sprint 1: Core Infrastructure & Local Setup (Week 1–2)
 
 - [x] Setup FastAPI project structure.
 - [x] **Local Environment Setup**:
@@ -90,7 +90,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] NetworkX graph implementation.
 - [x] LLM client setup (OpenAI + Ollama).
 
-### Phase 2: LightRAG Pipeline & Validation (Week 3–4)
+### Sprint 2: LightRAG Pipeline & Validation (Week 3–4)
 
 - [x] Entity extraction từ documents.
 - [x] Graph construction với hỗ trợ persistence (SQL & ChromaDB).
@@ -98,21 +98,21 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 - [x] **Connectivity Validation**: Hoàn thiện bộ script kiểm thử kết nối (`scripts/validate_pipeline.py`).
 - [x] Context assembly cho LLM với tối ưu hóa prompt (Socratic mode).
 
-### Phase 3: Document Processing (Week 5) - COMPLETED
+### Sprint 3: Document Processing (Week 5) - COMPLETED
 
 - [x] PDF upload & text extraction
 - [x] Chunking strategy implementation
 - [x] Batch entity processing
 - [x] Graph persistence (save/load)
 
-### Phase 4: Chat Integration (Week 6–7) - COMPLETED
+### Sprint 4: Chat Integration (Week 6–7) - COMPLETED
 
 - [x] Chat endpoint với LightRAG context
 - [x] Socratic mode với graph-aware prompts
 - [x] Response streaming (SSE)
 - [x] Error handling & Durability (Hardened)
 
-### Phase 5: Frontend (Week 8–9) — COMPLETED ✅
+### Sprint 5: Frontend (Week 8–9) — COMPLETED ✅
 
 - [x] Document upload UI (drag & drop, validation, progress tracking)
 - [x] Chat interface (SSE streaming với buffered parser, retry logic, 30s timeout detection)

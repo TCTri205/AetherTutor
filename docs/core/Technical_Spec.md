@@ -69,7 +69,7 @@ Hệ thống triển khai các kỹ thuật sư phạm thông qua "Prompt Engine
 
 ## 4. Tối ưu hóa Mô hình (Model Strategy)
 
-AetherTutor sử dụng chiến lược đa mô hình để cân bằng giữa chi phí và hiệu năng. Chi tiết về các mô hình được sử dụng và lộ trình phát triển tính năng có thể xem tại [Roadmap.md](Roadmap.md).
+AetherTutor sử dụng chiến lược đa mô hình để cân bằng giữa chi phí và hiệu năng. Chi tiết về các mô hình được sử dụng và lộ trình phát triển tính năng có thể xem tại [Roadmap.md](../reports/Roadmap.md).
 
 ## 5. Rate Limiting & Token Management
 

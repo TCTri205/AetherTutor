@@ -2,7 +2,7 @@
 
 > **Document Owner:** AetherTutor Team
 > **Last Updated:** April 8, 2026
-> **Status:** LAUNCHED (MVP Phase 6 Complete — Ready for Production deployment)
+> **Status:** LAUNCHED (MVP Sprint 6 Complete — Ready for Production deployment)
 
 ---
 
@@ -10,14 +10,14 @@ Tài liệu này mô tả kế hoạch triển khai **MVP (Minimum Viable Produc
 
 ---
 
-## 1. Tóm tắt các Giai đoạn (Phases Summary)
+## 1. Tóm tắt các Giai đoạn (Sprints Summary)
 
-1. **Phase 1: Core Infrastructure** (Week 1-2) - Setup FastAPI, MCP, DB, LLM.
-2. **Phase 2: LightRAG Core** (Week 3-4) - Pipeline, Entity Extraction, Graph.
-3. **Phase 3: Document Processing** (Week 5) - Upload, Ingestion, Persistence.
-4. **Phase 4: Chat Interface** (Week 6-7) - Socratic Mode, Streaming, Context.
-5. **Phase 5: Frontend Interface** (Week 8-9) - React UI, Graph View, Interaction.
-6. **Phase 6: Testing & Polish** (Week 10) - Performance, Bug fixes, Launch.
+1. **Sprint 1: Core Infrastructure** (Week 1-2) - Setup FastAPI, MCP, DB, LLM.
+2. **Sprint 2: LightRAG Core** (Week 3-4) - Pipeline, Entity Extraction, Graph.
+3. **Sprint 3: Document Processing** (Week 5) - Upload, Ingestion, Persistence.
+4. **Sprint 4: Chat Interface** (Week 6-7) - Socratic Mode, Streaming, Context.
+5. **Sprint 5: Frontend Interface** (Week 8-9) - React UI, Graph View, Interaction.
+6. **Sprint 6: Testing & Polish** (Week 10) - Performance, Bug fixes, Launch.
 
 ---
 
@@ -37,7 +37,7 @@ User uploads PDF → LightRAG processes document → User chats with AI → AI a
 - ✅ AI sử dụng LightRAG dual-level retrieval để trả lời
 - ✅ Xem knowledge graph của document
 
-**OUT of scope (để phase sau):**
+**OUT of scope (để giai đoạn sau):**
 
 - ❌ Flashcards & SM-2
 - ❌ Quiz generation
@@ -48,7 +48,7 @@ User uploads PDF → LightRAG processes document → User chats with AI → AI a
 
 ### 2.2 MVP Success Criteria
 
-Xem chi tiết bộ chỉ số đo lường tại [Roadmap.md#2-chi-số-thành-công-success-criteria](Roadmap.md#2-chi-số-thành-công-success-criteria).
+Xem chi tiết bộ chỉ số đo lường tại [Roadmap.md#5-chỉ-số-thành-công-success-criteria](../reports/Roadmap.md#5-chỉ-số-thành-công-success-criteria).
 
 ---
 
@@ -84,13 +84,13 @@ graph TD
 
 ### 3.2 Technology Stack (MVP)
 
-Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-tech-stack-mvp](Technical_Spec.md#1-công-nghệ-sử-dụng-tech-stack-mvp).
+Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-tech-stack-mvp](../core/Technical_Spec.md#1-công-nghệ-sử-dụng-tech-stack-mvp).
 
 ---
 
-## 4. Implementation Phases
+## 4. Implementation Sprints
 
-### Phase 1: Core Infrastructure (Week 1–2)
+### Sprint 1: Core Infrastructure (Week 1–2)
 
 **Mục tiêu:** Setup được môi trường phát triển và các components cơ bản.
 
@@ -161,11 +161,11 @@ Xem chi tiết Tech Stack tại [Technical_Spec.md#1-công-nghệ-sử-dụng-te
 
 ---
 
-**Phase 2: LightRAG Core (Week 3-4) - COMPLETED**
+**Sprint 2: LightRAG Core (Week 3-4) - COMPLETED**
 
 **Mục tiêu:** Implement được LightRAG pipeline: Entity extraction → Graph construction → Retrieval.
 
-Chi tiết mã nguồn và logic thực thi: [LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết](LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết)
+Chi tiết mã nguồn và logic thực thi: [LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết](../LightRAG_Implementation.md#3-lightrag-pipeline-chi-tiết)
 
 **Deliverables:**
 - ✅ Entity extraction working (Qwen2.5-1.5B Optimized)
@@ -176,11 +176,11 @@ Chi tiết mã nguồn và logic thực thi: [LightRAG_Implementation.md#3-light
 
 ---
 
-### Phase 3: Document Processing Pipeline (Week 5) - COMPLETED
+### Sprint 3: Document Processing Pipeline (Week 5) - COMPLETED
 
 **Mục tiêu:** Upload PDF → Extract text → Process with LightRAG → Store results.
 
-Chi tiết logic xử lý tài liệu: [LightRAG_Implementation.md#31-ingestion-pipeline-document--graph](LightRAG_Implementation.md#31-ingestion-pipeline-document--graph)
+Chi tiết logic xử lý tài liệu: [LightRAG_Implementation.md#31-ingestion-pipeline-document--graph](../LightRAG_Implementation.md#31-ingestion-pipeline-document--graph)
 
 **Deliverables:**
 - ✅ PDF upload working
@@ -190,11 +190,11 @@ Chi tiết logic xử lý tài liệu: [LightRAG_Implementation.md#31-ingestion-
 
 ---
 
-### Phase 4: Chat Interface (Week 6-7) - COMPLETED
+### Sprint 4: Chat Interface (Week 6-7) - COMPLETED
 
 **Mục tiêu:** User có thể chat với AI, AI sử dụng LightRAG để trả lời với context và hỗ trợ Streaming.
 
-Chi tiết logic hội thoại Socratic: [LightRAG_Implementation.md#32-retrieval-pipeline-query--context](LightRAG_Implementation.md#32-retrieval-pipeline-query--context)
+Chi tiết logic hội thoại Socratic: [LightRAG_Implementation.md#32-retrieval-pipeline-query--context](../LightRAG_Implementation.md#32-retrieval-pipeline-query--context)
 
 **Deliverables:**
 - ✅ Chat endpoint working
@@ -205,7 +205,7 @@ Chi tiết logic hội thoại Socratic: [LightRAG_Implementation.md#32-retrieva
 
 ---
 
-### Phase 5: Frontend (Week 8–9) — COMPLETED ✅
+### Sprint 5: Frontend (Week 8–9) — COMPLETED ✅
 
 **Mục tiêu:** ~~React UI cho upload, chat, và xem graph~~ → **ĐÃ HOÀN THÀNH** — Full React UI với đầy đủ tính năng MVP.
 
@@ -312,7 +312,7 @@ frontend/src/
 
 ---
 
-### Phase 6: Testing & Polish (Week 10)
+### Sprint 6: Testing & Polish (Week 10)
 
 **Mục tiêu:** Test end-to-end, fix bugs, optimize performance.
 
@@ -437,13 +437,13 @@ services:
 
 ## 6. Giảm thiểu Rủi ro (Risk Mitigation)
 
-Xem chi tiết đánh giá rủi ro tại [future_ops/Risk_Assessment.md](future_ops/Risk_Assessment.md).
+Xem chi tiết đánh giá rủi ro tại [future_ops/Risk_Assessment.md](../future_ops/Risk_Assessment.md).
 
 ---
 
 ## 7. Tóm tắt Lộ trình (Timeline Summary)
 
-Toàn bộ kế hoạch thời gian chi tiết được quản lý tập trung tại [Roadmap.md#lightrag-integration-timeline](Roadmap.md#lightrag-integration-timeline).
+Toàn bộ kế hoạch thời gian chi tiết được quản lý tập trung tại [Roadmap.md#lightrag-integration-timeline](../reports/Roadmap.md#lightrag-integration-timeline).
 
 ---
 
@@ -469,7 +469,7 @@ Sau khi MVP hoàn thành, các tính năng tiếp theo:
 
 © 2026 AetherTutor Team. Last updated: April 7, 2026
 
-**MVP Launch Status:** ✅ LAUNCHED — 100% Phase 6 Integration & Hardening Complete
+**MVP Launch Status:** ✅ LAUNCHED — 100% Sprint 6 Integration & Hardening Complete
 - Full-stack Dockerization & Nginx setup done
 - Backend integration tests & E2E flows validated
 - Production hardening (CORS, Rate Limiting) applied

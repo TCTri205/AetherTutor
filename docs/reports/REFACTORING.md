@@ -15,7 +15,7 @@
 
 ## Các thay đổi đã thực hiện
 
-### Phase 1: Quick Wins (Tác động cao, Rủi ro thấp)
+### Sprint 1: Quick Wins (Tác động cao, Rủi ro thấp)
 
 #### 1. Sửa lỗi Test Fixture
 - **File:** `tests/conftest.py`
@@ -55,7 +55,7 @@
 
 ---
 
-### Phase 2: Cải tiến Kiến trúc
+### Sprint 2: Cải tiến Kiến trúc
 
 #### 6. Tạo BaseRepository cho DRY
 - **File mới:** `app/repositories/base.py`
@@ -107,7 +107,7 @@
 
 ---
 
-### Phase 3: Hiệu năng & Độ bền
+### Sprint 3: Hiệu năng & Độ bền
 
 #### 10. ChromaDB Connection Pooling & Caching
 - **File:** `app/services/chroma_client.py`
@@ -120,7 +120,7 @@
 
 ---
 
-### Phase 4: Testing & Documentation
+### Sprint 4: Testing & Documentation
 
 #### 11. Mở rộng Test Suite
 - **Test files mới:**

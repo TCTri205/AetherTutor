@@ -92,7 +92,7 @@ services:
       - CHROMA_PORT=8000
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       - DEFAULT_LLM_MODEL=hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
     depends_on:
       db:
@@ -119,7 +119,7 @@ services:
       - CHROMA_HOST=chromadb
       - USE_LLM_MOCK=${USE_LLM_MOCK:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       - DEFAULT_LLM_MODEL=hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M
     depends_on:
       - api
@@ -131,6 +131,7 @@ services:
     networks:
       - aethertutor-net
     healthcheck:
+      # Pgrep is not available in Alpine, using redis.ping() to at least verify connectivity
       test: ["CMD-SHELL", "python -c \"import redis; r=redis.Redis(host='redis',port=6379); r.ping(); print('OK')\""]
       interval: 30s
       timeout: 10s

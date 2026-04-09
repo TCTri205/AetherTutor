@@ -25,46 +25,106 @@ Hệ thống vận hành dựa trên sự kết hợp giữa các thuyết học
 
 ## 3. Hệ thống Tài liệu (Documentation Hub)
 
-AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm bảo tính nhất quán và loại bỏ sự chồng chéo thông tin. Mỗi tài liệu đóng vai trò là "Single Source of Truth" cho một lĩnh vực cụ thể.
+AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm bảo tính nhất quán và loại bỏ sự chồng chéo thông tin. Tài liệu được tổ chức theo cấu trúc phân loại rõ ràng:
 
-| Tài liệu | Trách nhiệm chính (Single Source of Truth) |
+### 📖 Đặc tả Cốt lõi (`core/`)
+
+> Single Source of Truth cho kiến trúc, kỹ thuật và dữ liệu.
+
+| Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
-| [**UI_UX_Design_Spec.md**](UI_UX_Design_Spec.md) | Thiết kế giao diện, Design System, trải nghiệm người dùng. |
-| [**Technical_Spec.md**](Technical_Spec.md) | Tech Stack, kiến trúc tổng thể và các AI Pipeline logic cốt lõi. |
-| [**Architecture.md**](Architecture.md) | Sơ đồ luồng, Agent orchestration và giao thức MCP. |
-| [**API_Specifications.md**](API_Specifications.md) | Đặc tả chi tiết các REST Endpoints (không để ở file khác). |
-| [**LightRAG_Implementation.md**](LightRAG_Implementation.md) | **Tất cả mã nguồn ví dụ**, thuật toán và logic Graph/RAG chuyên sâu. |
-| [**MVP_Implementation_Plan.md**](MVP_Implementation_Plan.md) | Checklist thực thi, các Phase triển khai và Timeline chi tiết. |
-| [**Data_Model.md**](Data_Model.md) | Thiết kế Schema DB, Vector Store và Graph Storage. |
-| [**Database.md**](Database.md) | Hạ tầng cơ sở dữ liệu (Docker, Resource Optimization, Connection). |
-| [**Roadmap.md**](Roadmap.md) | Tầm nhìn dài hạn và các cột mốc quan trọng (Milestones). |
-| [**REFACTORING.md**](REFACTORING.md) | Chi tiết cải tiến code quality, performance, testing (v0.1.1). |
+| [**Architecture.md**](core/Architecture.md) | Sơ đồ luồng, Agent orchestration và giao thức MCP. |
+| [**Technical_Spec.md**](core/Technical_Spec.md) | Tech Stack, kiến trúc tổng thể và các AI Pipeline logic cốt lõi. |
+| [**API_Specifications.md**](core/API_Specifications.md) | Đặc tả chi tiết các REST Endpoints. |
+| [**Data_Model.md**](core/Data_Model.md) | Thiết kế Schema DB, Vector Store và Graph Storage. |
+| [**Database.md**](core/Database.md) | Hạ tầng cơ sở dữ liệu (Docker, Resource Optimization, Connection). |
+| [**Features.md**](core/Features.md) | Danh sách tính năng và trụ cột chức năng. |
+
+### 🎨 Thiết kế & Trải nghiệm (`design/`)
+
+> Tài liệu về UI/UX, kịch bản người dùng và phương pháp sư phạm.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**UI_UX_Design_Spec.md**](design/UI_UX_Design_Spec.md) | Thiết kế giao diện, Design System, trải nghiệm người dùng. |
+| [**User_Scenarios.md**](design/User_Scenarios.md) | Kịch bản sử dụng thực tế và luồng tương tác của Agent. |
+| [**Methodology.md**](design/Methodology.md) | Phương pháp học tập và combo công cụ theo lĩnh vực. |
+
+### 📋 Kế hoạch Triển khai (`plans/`)
+
+> Implementation plans, sprint checklists và audit findings.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**MVP_Implementation_Plan.md**](plans/MVP_Implementation_Plan.md) | Checklist thực thi Stage 1 (MVP), các Sprint 1-6 và Timeline chi tiết. |
+| [**Stage2_Implementation_Plan.md**](plans/Stage2_Implementation_Plan.md) | Kế hoạch Stage 2 — Intelligence & Memory (10 tuần). |
+| [**implementation_plan.md**](plans/implementation_plan.md) | Audit findings & polish plan cho Final Polish. |
+
+### 📊 Báo cáo & Lộ trình (`reports/`)
+
+> Báo cáo hoàn thành, checklist launch và roadmap theo dõi milestones.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**Roadmap.md**](reports/Roadmap.md) | Tầm nhìn dài hạn, cột mốc quan trọng (Milestones) và Success Criteria. |
+| [**PHASE5_COMPLETION.md**](reports/PHASE5_COMPLETION.md) | Báo cáo hoàn thành Sprint 5 — Frontend Interface. |
+| [**REFACTORING.md**](reports/REFACTORING.md) | Báo cáo refactoring v0.1.1 — Code quality, performance, testing. |
+| [**LAUNCH_CHECKLIST.md**](reports/LAUNCH_CHECKLIST.md) | Checklist kiểm tra trước khi launch MVP v0.1. |
+
+### 🧪 Kiểm thử (`testing/`)
+
+> Hướng dẫn kiểm thử thủ công (manual testing guides).
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**E2E_INTEGRATION_TESTS.md**](testing/E2E_INTEGRATION_TESTS.md) | Hướng dẫn kiểm thử E2E integration (4 flows + error recovery). |
+| [**ERROR_STATES_TESTING.md**](testing/ERROR_STATES_TESTING.md) | Hướng dẫn kiểm thử error states UI/UX (S8.1a-S8.1f & S8.2). |
+
+### 🔮 Hạ tầng & Tương lai (`future_ops/`)
+
+> Tài liệu cho các tính năng và hạ tầng tương lai.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**API_Full_Spec.md**](future_ops/API_Full_Spec.md) | Đặc tả API đầy đủ (post-MVP). |
+| [**Deployment_Architecture.md**](future_ops/Deployment_Architecture.md) | Kiến trúc triển khai production. |
+| [**Monitoring_Observability.md**](future_ops/Monitoring_Observability.md) | Chiến lược monitoring và observability. |
+| [**Risk_Assessment.md**](future_ops/Risk_Assessment.md) | Đánh giá rủi ro và mitigation strategies. |
+| [**Security_Privacy.md**](future_ops/Security_Privacy.md) | Chính sách bảo mật và privacy compliance. |
+| [**Testing_Strategy.md**](future_ops/Testing_Strategy.md) | Chiến lược kiểm thử tổng thể. |
+
+### 🤝 Hướng dẫn Đóng góp
+
+- [**Contributing.md**](Contributing.md): Quy chuẩn mã nguồn, quy trình PR và code review.
+
+### 📚 LightRAG Implementation
+
+- [**LightRAG_Implementation.md**](LightRAG_Implementation.md): Deep-dive thuật toán, cấu trúc Graph và **Mã nguồn ví dụ chi tiết**.
 
 ---
 
-### 📂 Lộ trình & Kịch bản
+## 4. Quick Navigation
 
-- [**Lộ trình Phát triển (Roadmap.md)**](Roadmap.md): Quản lý toàn bộ Timeline (Quý/Tuần) và Chỉ số thành công (Success Criteria).
-- [**Kịch bản sử dụng (User_Scenarios.md)**](User_Scenarios.md): Các câu chuyện sử dụng thực tế và luồng tương tác của Agent.
+### Bắt đầu nhanh
+- 🚀 **New to AetherTutor?** → Đọc [Features.md](core/Features.md) để hiểu tính năng
+- 🏗️ **Want to understand architecture?** → Đọc [Architecture.md](core/Architecture.md)
+- 💻 **Ready to develop?** → Xem [MVP_Implementation_Plan.md](plans/MVP_Implementation_Plan.md)
 
-### 📂 Đặc tả Kỹ thuật & Thực thi
+### Dành cho Developers
+- 📐 **Tech Stack** → [Technical_Spec.md](core/Technical_Spec.md)
+- 🔌 **API Reference** → [API_Specifications.md](core/API_Specifications.md)
+- 🗄️ **Database Setup** → [Database.md](core/Database.md)
+- 🤝 **Contributing** → [Contributing.md](Contributing.md)
 
-- [**Đặc tả Kỹ thuật (Technical_Spec.md)**](Technical_Spec.md): Chi tiết Tech Stack MVP, AI Pipeline và chiến lược Prompt Engineering.
-- [**Kiến trúc hệ thống (Architecture.md)**](Architecture.md): Sơ đồ điều phối Agentic Workflow và giao thức MCP.
-- [**Cấu hình Hạ tầng DB (Database.md)**](Database.md): Cách thiết lập PostgreSQL trên Docker tối ưu tài nguyên.
-- [**Kế hoạch thực thi (MVP_Implementation_Plan.md)**](MVP_Implementation_Plan.md): Danh sách các đầu việc (Checklist) chi tiết cho đội ngũ phát triển.
-- [**LightRAG Implementation (LightRAG_Implementation.md)**](LightRAG_Implementation.md): Deep-dive thuật toán, cấu trúc Graph và **Mã nguồn ví dụ chi tiết**.
+### Dành cho QA/Testing
+- 🧪 **E2E Testing** → [testing/E2E_INTEGRATION_TESTS.md](testing/E2E_INTEGRATION_TESTS.md)
+- ❌ **Error States** → [testing/ERROR_STATES_TESTING.md](testing/ERROR_STATES_TESTING.md)
+- ✅ **Launch Checklist** → [reports/LAUNCH_CHECKLIST.md](reports/LAUNCH_CHECKLIST.md)
 
-### 📂 Dữ liệu & Quy chuẩn
-
-- [**API Specifications (API_Specifications.md)**](API_Specifications.md): Đặc tả các Endpoints, tham số và ví dụ JSON (MVP Core).
-- [**Data Model & Schema (Data_Model.md)**](Data_Model.md): Thiết kế DB, Vector Store và Graph Storage.
-- [**Hướng dẫn đóng góp (Contributing.md)**](Contributing.md): Quy chuẩn mã nguồn và quy trình làm việc.
-- [**Tài liệu Refactoring (REFACTORING.md)**](REFACTORING.md): Chi tiết các cải tiến code quality, performance và testing (v0.1.1).
-
-### 📂 Hạ tầng & Tương lai (Future Ops)
-*(Nằm trong thư mục `future_ops/`)*
-- [API Full Specification](future_ops/API_Full_Spec.md), [Deployment](future_ops/Deployment_Architecture.md), [Monitoring](future_ops/Monitoring_Observability.md), v.v.
+### Dành cho Project Management
+- 📊 **Roadmap** → [reports/Roadmap.md](reports/Roadmap.md)
+- 📋 **Sprint Plans** → [plans/](plans/)
+- 📈 **Completion Reports** → [reports/](reports/)
 
 ---
 © 2026 AetherTutor Team. Dự án đang trong giai đoạn R&D tập trung vào lõi Algorithm và UX.

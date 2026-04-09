@@ -59,11 +59,12 @@ npm run dev
 
 Tài liệu chi tiết được tổ chức trong thư mục `docs/`:
 
-- [**Kiến trúc hệ thống (Architecture.md)**](docs/Architecture.md)
-- [**Cấu hình API (API_Specifications.md)**](docs/API_Specifications.md)
-- [**Hướng dẫn kiểm thử E2E (E2E_INTEGRATION_TESTS.md)**](docs/E2E_INTEGRATION_TESTS.md)
-- [**Lộ trình phát triển (Roadmap.md)**](docs/Roadmap.md)
-- [**Launch Checklist (LAUNCH_CHECKLIST.md)**](docs/LAUNCH_CHECKLIST.md)
+- [**Kiến trúc hệ thống**](docs/core/Architecture.md)
+- [**Cấu hình API**](docs/core/API_Specifications.md)
+- [**Hướng dẫn kiểm thử E2E**](docs/testing/E2E_INTEGRATION_TESTS.md)
+- [**Lộ trình phát triển**](docs/reports/Roadmap.md)
+- [**Launch Checklist**](docs/reports/LAUNCH_CHECKLIST.md)
+- [**📚 Documentation Hub**](docs/README.md) — Xem toàn bộ tài liệu
 
 ---
 

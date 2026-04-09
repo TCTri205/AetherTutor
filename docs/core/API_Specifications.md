@@ -41,7 +41,7 @@ Tài liệu này định nghĩa chi tiết các API endpoints cốt lõi cho gia
 ## 1b. Post-MVP Endpoints (Không build trong MVP)
 
 > [!WARNING]
-> Các endpoint dưới đây **không thuộc MVP scope**. Tham khảo [MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope](MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope) để biết chi tiết.
+> Các endpoint dưới đây **không thuộc MVP scope**. Tham khảo [MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope](../plans/MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope) để biết chi tiết.
 
 ### Post-MVP: Visualization & Quiz
 

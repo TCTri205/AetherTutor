@@ -1,6 +1,6 @@
 # MVP Launch Checklist — AetherTutor v0.1
 
-> **Phase 6 Status:** Integration & Launch Finale
+> **Sprint 6 Status:** Integration & Launch Finale
 > **Date:** April 7, 2026
 > **Workflow:** `balanced-default`
 

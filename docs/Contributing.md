@@ -81,7 +81,7 @@ Add any other context about the problem here.
 
 **Before submitting a feature request:**
 - Check [existing feature requests](https://github.com/aethertutor/aethertutor/issues?q=is%3Aissue+label%3Aenhancement)
-- Review the [Roadmap](Roadmap.md) to see if it's already planned
+- Review the [Roadmap](reports/Roadmap.md) to see if it's already planned
 
 **Feature request template:**
 
@@ -745,7 +745,7 @@ make deploy-prod
 
 - [Documentation](https://docs.aethertutor.com)
 - [API Reference](https://api.aethertutor.com/docs)
-- [Architecture Overview](Architecture.md)
+- [Architecture Overview](core/Architecture.md)
 - [Testing Guide](future_ops/Testing_Strategy.md)
 - [Security Policy](future_ops/Security_Privacy.md)
 

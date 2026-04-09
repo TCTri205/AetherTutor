@@ -174,6 +174,7 @@ class ChatService:
                 content=full_content,
                 status=MessageStatus.COMPLETED
             )
+            await chat_repo.session.commit()
             yield f"event: done\ndata: {json.dumps({'content_full': full_content, 'context_used': assistant_msg.context_used, 'found_entities': found_entities}, default=str)}\n\n"
 
         except (asyncio.CancelledError, GeneratorExit):

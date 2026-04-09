@@ -40,8 +40,15 @@ async def test_chat_stream_context_validation_fails(chat_service, mock_repo):
     
     # Execute & Verify: Should raise 400
     with pytest.raises(HTTPException) as excinfo:
-        # We need to consume the generator for it to run
-        gen = chat_service.chat_stream(conv_id, doc_id, "hello", MagicMock())
+        # Call _stream_logic directly with mock_repo
+        gen = chat_service._stream_logic(
+            chat_repo=mock_repo,
+            retriever=mock_retriever,
+            conversation_id=conv_id,
+            document_id=doc_id,
+            user_query="hello",
+            background_tasks=MagicMock()
+        )
         await gen.__anext__()
     
     assert excinfo.value.status_code == 400
@@ -69,14 +76,21 @@ async def test_chat_stream_durability_commits(chat_service, mock_repo, mock_retr
     with patch("app.services.chat_service.llm_service") as mock_llm:
         mock_llm.stream_chat_completion.return_value = mock_stream
         
-        # Execute
-        gen = chat_service.chat_stream(conv_id, doc_id, "hello", MagicMock())
+        # Execute _stream_logic directly
+        gen = chat_service._stream_logic(
+            chat_repo=mock_repo,
+            retriever=mock_retriever,
+            conversation_id=conv_id,
+            document_id=doc_id,
+            user_query="hello",
+            background_tasks=MagicMock()
+        )
         async for _ in gen:
             pass
 
     # Verify: 3 commits in total (user msg, pending msg, completed msg)
     # Actually, if stream is empty, it marks as COMPLETED with empty content.
-    assert mock_repo.session.commit.call_count >= 2
+    assert mock_repo.session.commit.call_count == 3
     # Verify order of commits matches durability requirement
     # First commit should be after add_message(role="user")
     # Second commit should be after add_message(role="assistant")
@@ -105,8 +119,15 @@ async def test_chat_stream_disconnect_marks_failed(chat_service, mock_repo, mock
     with patch("app.services.chat_service.llm_service") as mock_llm:
         mock_llm.stream_chat_completion.return_value = mock_stream
         
-        # Execute
-        gen = chat_service.chat_stream(conv_id, doc_id, "hello", MagicMock())
+        # Execute _stream_logic directly
+        gen = chat_service._stream_logic(
+            chat_repo=mock_repo,
+            retriever=mock_retriever,
+            conversation_id=conv_id,
+            document_id=doc_id,
+            user_query="hello",
+            background_tasks=MagicMock()
+        )
         try:
             async for _ in gen:
                 pass

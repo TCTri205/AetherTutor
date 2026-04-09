@@ -1,4 +1,4 @@
-# E2E Integration Test Guide — AetherTutor Phase 5
+# E2E Integration Test Guide — AetherTutor Sprint 5
 
 > **Created:** April 7, 2026
 > **Type:** Manual End-to-End Testing

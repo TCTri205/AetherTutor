@@ -1255,7 +1255,7 @@ Animated shimmer effect: Left to right gradient
 
 ## 8. Thiết kế cho MVP
 
-### 8.1 MVP Scope (Phase 5: Week 8-9)
+### 8.1 MVP Scope (Sprint 5: Week 8-9)
 
 **Required Screens:**
 
@@ -1427,14 +1427,14 @@ graph TD
 
 ## 11. Next Steps & Deliverables
 
-### Phase 1: Design (Week 1-2)
+### Sprint 1: Design (Week 1-2)
 
 - [ ] Create Figma wireframes for all core screens
 - [ ] Design component library in Storybook
 - [ ] Prototype key interactions (chat, graph viewer)
 - [ ] User testing with 3-5 participants
 
-### Phase 2: Development (Week 3-6)
+### Sprint 2: Development (Week 3-6)
 
 - [ ] Setup React project với TypeScript
 - [ ] Implement design system (Tailwind config)
@@ -1442,7 +1442,7 @@ graph TD
 - [ ] Develop screens (Dashboard, Upload, Chat, Graph)
 - [ ] Integrate với backend API
 
-### Phase 3: Polish (Week 7-8)
+### Sprint 3: Polish (Week 7-8)
 
 - [ ] Add animations và micro-interactions
 - [ ] Test responsive breakpoints
