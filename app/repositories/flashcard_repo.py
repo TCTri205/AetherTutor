@@ -120,9 +120,9 @@ class FlashcardRepository(BaseRepository[Flashcard]):
         """Update SM-2 parameters for a flashcard."""
         flashcard = await self.get_by_id(card_id)
         if flashcard:
-            flashcard.ease_factor = ease_factor
-            flashcard.interval = interval
-            flashcard.repetitions = repetitions
+            flashcard.sm2_ease_factor = ease_factor
+            flashcard.sm2_interval = interval
+            flashcard.sm2_repetitions = repetitions
             flashcard.sm2_next_review = next_review
             await self.session.flush()
             await self.session.refresh(flashcard)

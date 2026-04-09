@@ -21,6 +21,9 @@ class Flashcard(Base, TimestampMixin):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
     front: Mapped[str] = mapped_column(Text, nullable=False)
     back: Mapped[str] = mapped_column(Text, nullable=False)
     card_metadata: Mapped[dict] = mapped_column(
@@ -74,6 +77,9 @@ class StudySession(Base, TimestampMixin):
     )
     quality: Mapped[int] = mapped_column(Integer, nullable=False)  # SM-2 quality: 0-5
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
     reviewed_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, server_default="NOW()"
     )
