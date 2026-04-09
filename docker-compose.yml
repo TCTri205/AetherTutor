@@ -130,6 +130,12 @@ services:
       - ./uploads:/app/uploads
     networks:
       - aethertutor-net
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'arq' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   frontend:
     build: 

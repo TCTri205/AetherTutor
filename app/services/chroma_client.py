@@ -9,6 +9,16 @@ from ..constants import (
 import logging
 from typing import Optional
 
+# Suppress ChromaDB/PostHog telemetry errors
+import os
+os.environ["ANONYMIZED_TELEMETRY"] = "false"
+try:
+    import chromadb.telemetry.product.posthog
+    # Replace the problematic capture method with a no-op
+    chromadb.telemetry.product.posthog.Posthog._direct_capture = lambda self, *args, **kwargs: None
+except Exception:
+    pass  # Ignore if telemetry module structure changes
+
 logger = logging.getLogger(__name__)
 
 

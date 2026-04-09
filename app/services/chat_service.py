@@ -3,11 +3,13 @@ import json
 import asyncio
 import logging
 from typing import AsyncGenerator, List, Optional, Dict, Any
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import update
 from ..models.conversation import MessageStatus, Conversation
 from ..repositories.chat_repo import ChatRepository
+from ..repositories.graph_repo import GraphRepository
 from ..core.retriever import Retriever
+from ..database import AsyncSessionLocal
 from ..services.llm_service import llm_service
 from ..constants import RETRIEVAL_HISTORY_LENGTH, LLM_STREAM_TIMEOUT_SECONDS, LLM_MAX_TOKENS_TITLE_GENERATION
 
@@ -23,7 +25,7 @@ class ChatService:
             conv = await self.chat_repo.get_conversation(conversation_id)
             if conv:
                 return conv.id
-        
+
         new_conv = await self.chat_repo.create_conversation(document_id)
         return new_conv.id
 
@@ -36,43 +38,112 @@ class ChatService:
         mode: str = "socratic"
     ) -> AsyncGenerator[str, None]:
         """
-        Main chat flow with SSE streaming and double-commit strategy.
+        Stream with pre-existing conversation_id.
+        Creates its own DB session to avoid lifecycle issues with StreamingResponse.
+        """
+        async with AsyncSessionLocal() as stream_session:
+            stream_chat_repo = ChatRepository(stream_session)
+            stream_graph_repo = GraphRepository(stream_session)
+            stream_retriever = Retriever(stream_graph_repo)
+
+            async for chunk in self._stream_logic(
+                chat_repo=stream_chat_repo,
+                retriever=stream_retriever,
+                conversation_id=conversation_id,
+                document_id=document_id,
+                user_query=user_query,
+                background_tasks=background_tasks,
+                mode=mode
+            ):
+                yield chunk
+
+    async def chat_stream_with_conversation(
+        self,
+        conversation_id: Optional[uuid.UUID],
+        document_id: uuid.UUID,
+        user_query: str,
+        background_tasks: BackgroundTasks,
+        mode: str = "socratic"
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream that handles conversation creation internally.
+        If conversation_id is provided, it's used directly.
+        Otherwise, a new conversation is created within the stream session.
+        """
+        async with AsyncSessionLocal() as stream_session:
+            stream_chat_repo = ChatRepository(stream_session)
+
+            # Get or create conversation within the stream session
+            if conversation_id:
+                conv = await stream_chat_repo.get_conversation(conversation_id)
+                if not conv:
+                    raise HTTPException(status_code=404, detail="Conversation not found")
+                resolved_conv_id = conv.id
+            else:
+                new_conv = await stream_chat_repo.create_conversation(document_id)
+                await stream_session.commit()
+                resolved_conv_id = new_conv.id
+
+            stream_graph_repo = GraphRepository(stream_session)
+            stream_retriever = Retriever(stream_graph_repo)
+
+            async for chunk in self._stream_logic(
+                chat_repo=stream_chat_repo,
+                retriever=stream_retriever,
+                conversation_id=resolved_conv_id,
+                document_id=document_id,
+                user_query=user_query,
+                background_tasks=background_tasks,
+                mode=mode
+            ):
+                yield chunk
+
+    async def _stream_logic(
+        self,
+        chat_repo: ChatRepository,
+        retriever: Retriever,
+        conversation_id: uuid.UUID,
+        document_id: uuid.UUID,
+        user_query: str,
+        background_tasks: BackgroundTasks,
+        mode: str = "socratic"
+    ) -> AsyncGenerator[str, None]:
+        """
+        Core streaming logic — called within a dedicated session context.
         """
         # 0. Context Validation: Ensure conversation belongs to the document
-        conv = await self.chat_repo.get_conversation(conversation_id)
+        conv = await chat_repo.get_conversation(conversation_id)
         if not conv or conv.document_id != document_id:
-            from fastapi import HTTPException
             logger.error(f"Context mismatch: conv {conversation_id} does not belong to doc {document_id}")
             raise HTTPException(status_code=400, detail="Conversation/Document mismatch or not found")
 
         # 1. Commit 1: Save User Message
-        user_msg = await self.chat_repo.add_message(
+        user_msg = await chat_repo.add_message(
             conversation_id=conversation_id,
             role="user",
             content=user_query
         )
-        await self.chat_repo.session.commit() # Hardening: Explicit commit for user message
+        await chat_repo.session.commit()
 
         # 2. Get Recent History (last 10 messages, BEFORE creating PENDING)
-        # This ensures we don't accidentally include the PENDING message we're about to create
-        history = await self.chat_repo.get_last_n_messages(conversation_id, n=RETRIEVAL_HISTORY_LENGTH)
+        history = await chat_repo.get_last_n_messages(conversation_id, n=RETRIEVAL_HISTORY_LENGTH)
 
         # 3. Retrieve Context (Hybrid: Top-k chunks/graph)
-        context, found_entities = await self.retriever.retrieve(user_query, str(document_id))
+        context, found_entities = await retriever.retrieve(user_query, str(document_id))
         context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 
         # 4. Construct Prompt
         messages = self._construct_tutor_prompt(mode, context_str, history, user_query)
 
         # 5. Commit 2: Create PENDING Assistant Message
-        assistant_msg = await self.chat_repo.add_message(
+        assistant_msg = await chat_repo.add_message(
             conversation_id=conversation_id,
             role="assistant",
             content="",
             status=MessageStatus.PENDING,
             context_used={"retrieval": context}
         )
-        await self.chat_repo.session.commit() # Hardening: Explicit commit for PENDING state
+        await chat_repo.session.commit()
 
         # 6. Yield Meta Info
         yield f"event: meta\ndata: {json.dumps({'message_id': str(assistant_msg.id), 'conversation_id': str(conversation_id)})}\n\n"
@@ -81,14 +152,13 @@ class ChatService:
         try:
             # 7. Start Streaming from LLM with timeout
             stream = await llm_service.stream_chat_completion(messages)
-            
-            # Add timeout to prevent hanging streams
+
             async def stream_with_timeout():
                 async for chunk in stream:
                     yield chunk
-            
+
             try:
-                async with asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS):  # 2 minutes timeout
+                async with asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS):
                     async for chunk in stream_with_timeout():
                         if chunk.choices and chunk.choices[0].delta.content:
                             delta = chunk.choices[0].delta.content
@@ -99,7 +169,7 @@ class ChatService:
                 raise Exception(f"LLM stream timed out after {LLM_STREAM_TIMEOUT_SECONDS} seconds")
 
             # 8. Commit 3 (Success): Update message to COMPLETED
-            await self.chat_repo.update_message(
+            await chat_repo.update_message(
                 assistant_msg.id,
                 content=full_content,
                 status=MessageStatus.COMPLETED
@@ -108,28 +178,25 @@ class ChatService:
 
         except (asyncio.CancelledError, GeneratorExit):
             logger.warning(f"Stream disconnected for message {assistant_msg.id}")
-            # Commit 3 (Failure/Disconnect): Save partial content and mark as FAILED
-            await self.chat_repo.update_message(
-                assistant_msg.id, 
-                content=full_content, 
+            await chat_repo.update_message(
+                assistant_msg.id,
+                content=full_content,
                 status=MessageStatus.FAILED
             )
-            await self.chat_repo.session.commit()
-            raise # Re-raise to allow cleanup
+            await chat_repo.session.commit()
+            raise
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
-            # Commit 3 (Failure): Save partial content and mark as FAILED
-            await self.chat_repo.update_message(
-                assistant_msg.id, 
-                content=full_content, 
+            await chat_repo.update_message(
+                assistant_msg.id,
+                content=full_content,
                 status=MessageStatus.FAILED
             )
-            await self.chat_repo.session.commit()
+            await chat_repo.session.commit()
             yield f"event: error\ndata: {json.dumps({'detail': str(e), 'code': 'STREAM_INTERRUPTED'})}\n\n"
-        
+
         finally:
-            # Trigger title generation if it's the first assistant message
             if len(history) <= 1:
                 background_tasks.add_task(self.generate_conversation_title, conversation_id, user_query)
 

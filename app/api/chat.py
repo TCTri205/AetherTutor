@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Body, BackgroundT
 from fastapi.responses import StreamingResponse
 from typing import List, Optional
 import uuid
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..repositories.chat_repo import ChatRepository
@@ -47,22 +48,56 @@ async def chat_stream(
     request: Request,
     stream_request: ChatStreamRequest,
     background_tasks: BackgroundTasks,
-    service: ChatService = Depends(get_chat_service)
 ):
     """
     Endpoint chính cho trò chuyện streaming (SSE).
     Hỗ trợ chế độ Socratic và Feynman.
+    Conversation creation is handled inside the stream generator to ensure
+    proper DB session lifecycle (no DI session conflicts).
     """
-    conv_id = await service.get_or_create_conversation(stream_request.document_id, stream_request.conversation_id)
+    # Import here to avoid circular imports
+    from ..services.chat_service import ChatService
+    from ..database import AsyncSessionLocal
+    from ..repositories.chat_repo import ChatRepository
+    from ..repositories.graph_repo import GraphRepository
+    from ..core.retriever import Retriever
+
+    async def stream_generator():
+        async with AsyncSessionLocal() as stream_session:
+            chat_repo = ChatRepository(stream_session)
+
+            # Get or create conversation within the stream session
+            conv_id = stream_request.conversation_id
+            if conv_id:
+                conv = await chat_repo.get_conversation(conv_id)
+                if not conv:
+                    yield f"event: error\ndata: {json.dumps({'detail': 'Conversation not found', 'code': 'NOT_FOUND'})}\n\n"
+                    return
+                resolved_conv_id = conv.id
+            else:
+                new_conv = await chat_repo.create_conversation(stream_request.document_id)
+                await stream_session.commit()
+                resolved_conv_id = new_conv.id
+
+            graph_repo = GraphRepository(stream_session)
+            retriever = Retriever(graph_repo)
+
+            # Create a minimal service-like context for streaming
+            service = ChatService(chat_repo, retriever)
+
+            async for chunk in service._stream_logic(
+                chat_repo=chat_repo,
+                retriever=retriever,
+                conversation_id=resolved_conv_id,
+                document_id=stream_request.document_id,
+                user_query=stream_request.message,
+                background_tasks=background_tasks,
+                mode=stream_request.mode
+            ):
+                yield chunk
 
     return StreamingResponse(
-        service.chat_stream(
-            conversation_id=conv_id,
-            document_id=stream_request.document_id,
-            user_query=stream_request.message,
-            background_tasks=background_tasks,
-            mode=stream_request.mode
-        ),
+        stream_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
