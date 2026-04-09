@@ -29,9 +29,17 @@ const api: AxiosInstance = axios.create({
   },
 });
 
-// Request Interceptor (placeholder for Auth in the future)
+// Request Interceptor (Temporary Authentication via X-User-Id)
+// ⚠️ WARNING: This is a TEMPORARY placeholder for Stage 2 multi-tenancy.
+// Production MUST replace with proper JWT-based authentication.
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // Allow per-user isolation via localStorage (dev/testing) or env variable
+    const userId =
+      localStorage.getItem('aether_user_id') ||
+      import.meta.env.VITE_DEFAULT_USER_ID ||
+      '00000000-0000-0000-0000-000000000001';
+    config.headers['X-User-Id'] = userId;
     return config;
   },
   (error: any) => Promise.reject(error)
