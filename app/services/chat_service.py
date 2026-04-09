@@ -145,6 +145,16 @@ class ChatService:
         )
         await chat_repo.session.commit()
 
+        # 5b. Defensive: Set FAILED default trước khi stream
+        # Nếu stream thành công -> override thành COMPLETED
+        # Nếu disconnect -> đã có trạng thái FAILED, không cần thêm commit trong exception block vốn dĩ rủi ro
+        await chat_repo.update_message(
+            assistant_msg.id,
+            content="",
+            status=MessageStatus.FAILED
+        )
+        await chat_repo.session.commit()
+
         # 6. Yield Meta Info
         yield f"event: meta\ndata: {json.dumps({'message_id': str(assistant_msg.id), 'conversation_id': str(conversation_id)})}\n\n"
 
@@ -179,16 +189,12 @@ class ChatService:
 
         except (asyncio.CancelledError, GeneratorExit):
             logger.warning(f"Stream disconnected for message {assistant_msg.id}")
-            await chat_repo.update_message(
-                assistant_msg.id,
-                content=full_content,
-                status=MessageStatus.FAILED
-            )
-            await chat_repo.session.commit()
+            # Message đã được set FAILED mặc định ở bước 5b, chỉ cần re-raise
             raise
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
+            # Update với partial content nếu có lỗi bất ngờ
             await chat_repo.update_message(
                 assistant_msg.id,
                 content=full_content,
@@ -232,30 +238,47 @@ class ChatService:
 
         return prompt_messages
 
-    async def generate_conversation_title(self, conversation_id: uuid.UUID, first_query: str):
+    async def generate_conversation_title(self, conversation_id: uuid.UUID, first_query: str, max_retries: int = 2):
         """
         Background task to generate a meaningful title for the conversation.
-        Creates its own database session to avoid using closed request sessions.
+        Includes retry logic and timeout for resilience.
         """
         from ..database import AsyncSessionLocal
+        import asyncio
         
-        try:
-            # Create a new session for the background task
-            async with AsyncSessionLocal() as session:
-                chat_repo = ChatRepository(session)
-                
-                prompt = f"Generate a very short title (max 5 words) for a conversation that starts with: '{first_query}'"
-                response = await llm_service.get_chat_completion([
-                    {"role": "user", "content": prompt}
-                ], max_tokens=LLM_MAX_TOKENS_TITLE_GENERATION)
+        for attempt in range(max_retries):
+            try:
+                # Create a new session for each attempt
+                async with AsyncSessionLocal() as session:
+                    chat_repo = ChatRepository(session)
+                    
+                    prompt = f"Generate a very short title (max 5 words) for a conversation that starts with: '{first_query}'"
+                    
+                    # Thêm timeout để tránh treo indefinitely
+                    response = await asyncio.wait_for(
+                        llm_service.get_chat_completion([
+                            {"role": "user", "content": prompt}
+                        ], max_tokens=LLM_MAX_TOKENS_TITLE_GENERATION),
+                        timeout=30.0
+                    )
 
-                title = response.choices[0].message.content.strip().strip('"')
-                await chat_repo.session.execute(
-                    update(Conversation)
-                    .where(Conversation.id == conversation_id)
-                    .values(title=title)
-                )
-                await chat_repo.session.commit()
-                logger.info(f"Generated title for {conversation_id}: {title}")
-        except Exception as e:
-            logger.error(f"Failed to generate title: {e}")
+                    title = response.choices[0].message.content.strip().strip('"')
+                    await chat_repo.session.execute(
+                        update(Conversation)
+                        .where(Conversation.id == conversation_id)
+                        .values(title=title)
+                    )
+                    await chat_repo.session.commit()
+                    logger.info(f"Generated title for {conversation_id}: {title}")
+                    return # Thành công
+            except asyncio.TimeoutError:
+                logger.warning(f"Title generation timed out on attempt {attempt + 1}")
+            except Exception as e:
+                logger.warning(f"Title generation attempt {attempt + 1} failed: {e}")
+            
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                logger.info(f"Retrying title generation in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"Failed to generate title after {max_retries} attempts for {conversation_id}")

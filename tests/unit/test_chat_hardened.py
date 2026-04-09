@@ -88,15 +88,15 @@ async def test_chat_stream_durability_commits(chat_service, mock_repo, mock_retr
         async for _ in gen:
             pass
 
-    # Verify: 3 commits in total (user msg, pending msg, completed msg)
-    # Actually, if stream is empty, it marks as COMPLETED with empty content.
-    assert mock_repo.session.commit.call_count == 3
+    # Verify: 4 commits in total (user msg, pending msg, defensive failed, completed msg)
+    assert mock_repo.session.commit.call_count == 4
     # Verify order of commits matches durability requirement
     # First commit should be after add_message(role="user")
     # Second commit should be after add_message(role="assistant")
 
 @pytest.mark.asyncio
 async def test_chat_stream_disconnect_marks_failed(chat_service, mock_repo, mock_retriever):
+    """Test that CancelledError properly marks message as FAILED."""
     # Setup
     doc_id = uuid.uuid4()
     conv_id = uuid.uuid4()
@@ -106,18 +106,17 @@ async def test_chat_stream_disconnect_marks_failed(chat_service, mock_repo, mock
     
     mock_assistant_msg = MagicMock()
     mock_assistant_msg.id = uuid.uuid4()
+    mock_assistant_msg.context_used = {}
     mock_repo.add_message.return_value = mock_assistant_msg
 
-    # Mock LLM stream that hangs or we simulate cancellation
-    mock_stream = AsyncMock()
-    async def infinite_gen():
-        yield MagicMock()
-        raise GeneratorExit() # Simulate disconnect
-    
-    mock_stream.__aiter__ = infinite_gen
+    # Mock LLM stream that gets cancelled (right way to simulate disconnect)
+    async def stream_that_gets_cancelled():
+        yield MagicMock(choices=[MagicMock(delta=MagicMock(content="partial"))])
+        raise asyncio.CancelledError() #← Simulate disconnect
 
     with patch("app.services.chat_service.llm_service") as mock_llm:
-        mock_llm.stream_chat_completion.return_value = mock_stream
+        # Quan trọng: Đảm bảo mock hỗ trợ await và trả về async generator
+        mock_llm.stream_chat_completion = AsyncMock(return_value=stream_that_gets_cancelled())
         
         # Execute _stream_logic directly
         gen = chat_service._stream_logic(
@@ -128,17 +127,15 @@ async def test_chat_stream_disconnect_marks_failed(chat_service, mock_repo, mock
             user_query="hello",
             background_tasks=MagicMock()
         )
-        try:
+        with pytest.raises(asyncio.CancelledError):
             async for _ in gen:
                 pass
-        except GeneratorExit:
-            pass
 
-    # Verify: update_message called with status=FAILED
-    mock_repo.update_message.assert_called_with(
+    # Verify: update_message called with status=FAILED from the defensive commit step
+    mock_repo.update_message.assert_any_call(
         mock_assistant_msg.id,
         content="",
         status=MessageStatus.FAILED
     )
-    # Ensure it was committed after failure
-    assert mock_repo.session.commit.call_count >= 3 # User, Pending, Failed
+    # Ensure it was committed (User, Pending, Defensive FAILED)
+    assert mock_repo.session.commit.call_count >= 3
