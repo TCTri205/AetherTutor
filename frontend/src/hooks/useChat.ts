@@ -62,12 +62,13 @@ export function useChat() {
   ) => {
     if (!documentId && !currentConversationId) {
        console.error("Missing documentId or conversationId");
+       toast.error('Không thể gửi tin nhắn: thiếu thông tin tài liệu hoặc cuộc hội thoại');
        return;
     }
 
     // Clear previous error state
     setChatError({ hasError: false, timestamp: 0 });
-    
+
     setIsStreaming(true);
     abortControllerRef.current = new AbortController();
 
@@ -98,11 +99,11 @@ export function useChat() {
     let retryCount = 0;
     const MAX_RETRIES = 3;
     let hasReceivedMeta = false;
-    
+
     // S8.1f: Timeout detection - 30 seconds
     let hasReceivedAnyChunk = false;
     let chunkTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
-    
+
     const startChunkTimeout = () => {
       // Clear existing timer
       if (chunkTimeoutTimer) {
@@ -143,6 +144,9 @@ export function useChat() {
 
     while (retryCount <= MAX_RETRIES) {
       try {
+        // Accumulator for assistant content — reset on each retry to avoid stale content
+        let assistantContentAccumulator = '';
+
         // Start timeout before making request
         startChunkTimeout();
         
@@ -215,17 +219,11 @@ export function useChat() {
                   // S8.1f: Mark that we received at least one chunk
                   hasReceivedAnyChunk = true;
                   resetChunkTimeout();
-                  
-                  // Use functional update to avoid stale messages state
+
+                  // Accumulate content locally to avoid repeated O(n) store lookups
+                  assistantContentAccumulator += data.delta || '';
                   updateMessage(assistantMsgId, {
-                    content: (useChatStore.getState().messages.find(m => m.id === assistantMsgId)?.content || '') + data.delta
-                  });
-                } else if (currentEvent === 'reasoning') {
-                  hasReceivedAnyChunk = true;
-                  resetChunkTimeout();
-                  
-                  updateMessage(assistantMsgId, {
-                    reasoning: (useChatStore.getState().messages.find(m => m.id === assistantMsgId)?.reasoning || '') + data.delta
+                    content: assistantContentAccumulator
                   });
                 } else if (currentEvent === 'done') {
                   resetChunkTimeout();
@@ -358,5 +356,7 @@ export function useChat() {
     // Conversation management
     currentConversationId,
     createNewConversation,
+    setConversation,
+    loadConversationHistory,
   };
 }

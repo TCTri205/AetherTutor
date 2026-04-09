@@ -28,11 +28,12 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 
 > Thời điểm dự kiến: Quý 2 - 2026 | Mục tiêu: Tăng cường khả năng trích xuất tri thức và cá nhân hóa việc học.
 
-- [ ] Tích hợp **The Examiner Agent** để tự động tạo Quiz và Flashcard từ **graph entities**.
-- [ ] Triển khai thuật toán **Spaced Repetition (SM-2)** cho lịch ôn tập.
-- [ ] Ra mắt tính năng **Zettelkasten Graph View** (Bản beta).
-- [ ] Cải thiện kỹ năng RAG bằng cách giảm thiểu ảo giác của AI qua **LightRAG cross-verification**.
-- [ ] Multi-document reasoning (trả lời queries cần nhiều documents).
+- [x] Tích hợp **The Examiner Agent** để tự động tạo Quiz và Flashcard từ **graph entities**.
+- [x] Triển khai thuật toán **Spaced Repetition (SM-2)** cho lịch ôn tập.
+- [x] Ra mắt tính năng **Zettelkasten Graph View** (Bản beta).
+- [x] Cải thiện kỹ năng RAG bằng cách giảm thiểu ảo giác của AI qua **LightRAG cross-verification**.
+- [x] Multi-document reasoning (trả lời queries cần nhiều documents).
+- [x] Testing & Polish (Sprint 5 — 90 unit tests passing).
 
 ## 3. Stage 3 (Visualization): Trực quan hóa & Multimedia
 
@@ -63,7 +64,7 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | **Pioneering** | Hoàn tất thiết kế và Research | 100% ✅ |
 | **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming + Full Frontend UI | 100% ✅ |
 | **v0.1.1 (Refactoring)** | Code quality, performance, testing (+155% tests), production-ready | 100% ✅ |
-| **v0.2 (Pro)** | Intelligence + SM-2 + Flashcards + Zettelkasten | 0% |
+| **v0.2 (Pro)** | Intelligence + SM-2 + Flashcards + Zettelkasten | 100% ✅ |
 | **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
 | **v1.0 (Public)** | Full feature set + Mobile app | 0% |
 

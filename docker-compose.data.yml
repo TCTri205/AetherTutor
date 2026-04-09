@@ -1,0 +1,88 @@
+# ============================================================
+# Docker Compose — Data Layer Only (Hybrid Development Mode)
+# ============================================================
+# Use this file for local development where you run the
+# Backend API and Frontend directly on the host machine,
+# but want Docker to manage the database services.
+#
+# Usage:
+#   Start:   docker compose -f docker-compose.data.yml up -d
+#   Stop:    docker compose -f docker-compose.data.yml down
+#   Logs:    docker compose -f docker-compose.data.yml logs -f
+#   Restart: docker compose -f docker-compose.data.yml restart
+# ============================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aethertutor-db
+    restart: always
+    ports:
+      - "5432:5432"  # Expose for host access
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aethertutor}
+    mem_limit: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aethertutor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: aethertutor-redis
+    restart: always
+    ports:
+      - "6379:6379"  # Expose for host access
+    mem_limit: 64mb
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  chromadb:
+    image: chromadb/chroma:0.5.0
+    container_name: aethertutor-chromadb
+    restart: always
+    ports:
+      - "8100:8000"  # Expose 8100 trên host → 8000 trong container (tránh conflict với uvicorn)
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    mem_limit: 512mb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    volumes:
+      - chroma_data:/chroma/chroma
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+  redis_data:
+  chroma_data:

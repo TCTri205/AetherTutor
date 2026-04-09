@@ -4,6 +4,9 @@ import Dashboard from './pages/Dashboard';
 import Vault from './pages/Vault';
 import Chat from './pages/Chat';
 import GraphExplorer from './pages/GraphExplorer';
+import Flashcards from './pages/Flashcards';
+import Quiz from './pages/Quiz';
+import Zettelkasten from './pages/Zettelkasten';
 import DocumentGuard from './components/shared/DocumentGuard';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { FallbackError } from './components/shared/FallbackError';
@@ -50,6 +53,21 @@ const router = createBrowserRouter([
             <DocumentGuard><GraphExplorer /></DocumentGuard>
           </ErrorBoundary>
         ),
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'flashcards',
+        element: <Flashcards />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'quiz',
+        element: <Quiz />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'notes',
+        element: <Zettelkasten />,
         errorElement: <ErrorPage />,
       },
     ],

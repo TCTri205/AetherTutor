@@ -124,11 +124,18 @@ export default function ConversationList({
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.2 }}
                   >
-                    <button
-                      onClick={() => onSelectConversation(conv.id)}
-                      disabled={isDeleting}
+                    <motion.button
+                      role="button"
+                      aria-disabled={isDeleting}
+                      onClick={() => !isDeleting && onSelectConversation(conv.id)}
+                      onKeyDown={(e) => {
+                        if (!isDeleting && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          onSelectConversation(conv.id);
+                        }
+                      }}
                       className={cn(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group relative",
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group relative cursor-pointer",
                         isActive
                           ? "bg-primary/10 text-primary border border-primary/20"
                           : "text-white/70 hover:bg-white/5 hover:text-white border border-transparent",
@@ -173,7 +180,7 @@ export default function ConversationList({
                       {isActive && (
                         <Check className="w-4 h-4 text-primary shrink-0" />
                       )}
-                    </button>
+                    </motion.button>
                   </motion.div>
                 );
               })}

@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import settings
-from .api import documents, chat, graph
+from .api import documents, chat, graph, flashcards, quiz, notes
 from .api.limiter import limiter
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
@@ -83,7 +83,10 @@ from sqlalchemy import text
 from .database import engine
 import chromadb
 
-@app.get("/health")
+# Health check router for /api/v1/health
+health_router = APIRouter(tags=["health"])
+
+@health_router.get("/health")
 async def health_check():
     """
     Detailed health check monitoring internal dependencies.
@@ -138,9 +141,12 @@ async def health_check():
         }
     }
 
-
 # Include API Routers
+app.include_router(health_router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
+app.include_router(flashcards.router, prefix="/api/v1")
+app.include_router(quiz.router, prefix="/api/v1")
+app.include_router(notes.router, prefix="/api/v1")
 

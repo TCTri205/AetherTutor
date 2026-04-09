@@ -78,9 +78,9 @@ async def test_ingest_text_success(pipeline, mock_repos, mock_extractor):
         mock_repos['chunk'].bulk_insert.assert_called_once()
         mock_repos['graph'].bulk_upsert_entities.assert_called_once()
 
-        # Verify chroma additions
-        assert mock_chroma.chunks_collection.add.called
-        assert mock_chroma.entities_collection.add.called
+        # Verify chroma additions (new wrapper methods)
+        assert mock_chroma.add_chunks.called
+        assert mock_chroma.add_entities.called
 
 @pytest.mark.asyncio
 async def test_ingest_error_handling(pipeline, mock_repos):

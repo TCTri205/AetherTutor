@@ -16,9 +16,10 @@ from ..constants import RETRIEVAL_HISTORY_LENGTH, LLM_STREAM_TIMEOUT_SECONDS, LL
 logger = logging.getLogger(__name__)
 
 class ChatService:
-    def __init__(self, chat_repo: ChatRepository, retriever: Retriever):
+    def __init__(self, chat_repo: ChatRepository, retriever: Retriever, user_id: Optional[str] = None):
         self.chat_repo = chat_repo
         self.retriever = retriever
+        self.user_id = user_id
 
     async def get_or_create_conversation(self, document_id: uuid.UUID, conversation_id: Optional[uuid.UUID] = None) -> uuid.UUID:
         if conversation_id:
@@ -129,7 +130,7 @@ class ChatService:
         history = await chat_repo.get_last_n_messages(conversation_id, n=RETRIEVAL_HISTORY_LENGTH)
 
         # 3. Retrieve Context (Hybrid: Top-k chunks/graph)
-        context, found_entities = await retriever.retrieve(user_query, str(document_id))
+        context, found_entities = await retriever.retrieve(user_query, str(document_id), user_id=self.user_id)
         context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 
         # 4. Construct Prompt
@@ -281,4 +282,16 @@ class ChatService:
                 logger.info(f"Retrying title generation in {wait_time}s...")
                 await asyncio.sleep(wait_time)
             else:
-                logger.error(f"Failed to generate title after {max_retries} attempts for {conversation_id}")
+                logger.error(f"Failed to generate title after {max_retries} attempts for {conversation_id}. Using fallback.")
+                # Fallback: Dùng 7 từ đầu tiên của first_query làm tiêu đề
+                words = first_query.split()
+                fallback_title = " ".join(words[:7]) + ("..." if len(words) > 7 else "")
+                
+                async with AsyncSessionLocal() as session:
+                    await session.execute(
+                        update(Conversation)
+                        .where(Conversation.id == conversation_id)
+                        .values(title=fallback_title)
+                    )
+                    await session.commit()
+                logger.info(f"Fallback title set for {conversation_id}: {fallback_title}")

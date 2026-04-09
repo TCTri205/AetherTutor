@@ -1,6 +1,6 @@
 import uuid
 import hashlib
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import tiktoken
 
 from .lightrag import LightRAG
@@ -10,6 +10,7 @@ from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
 from ..repositories.graph_repo import GraphRepository
 from ..services.chroma_client import chroma_client
+from ..services.embedding_service import embedding_service
 from .entity_extractor import EntityExtractor
 from .retriever import Retriever
 from ..schemas.lightrag import ExtractionResult
@@ -24,13 +25,15 @@ class LightRAGPipeline(LightRAG):
         chunk_repo: ChunkRepository,
         graph_repo: GraphRepository,
         extractor: EntityExtractor,
-        retriever: Retriever
+        retriever: Retriever,
+        user_id: Optional[uuid.UUID] = None,
     ):
         self.doc_repo = doc_repo
         self.chunk_repo = chunk_repo
         self.graph_repo = graph_repo
         self.extractor = extractor
         self.retriever = retriever
+        self.user_id = user_id  # user_id cho multi-tenant isolation trong ChromaDB
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
 
     def _calculate_content_hash(self, text: str) -> str:
@@ -74,7 +77,7 @@ class LightRAGPipeline(LightRAG):
         doc_id = uuid.UUID(document_id)
         await self.ingest_text(doc_id, text)
 
-    async def ingest_text(self, doc_id: uuid.UUID, text: str) -> str:
+    async def ingest_text(self, doc_id: uuid.UUID, text: str, user_id: Optional[uuid.UUID] = None) -> str:
         """
         Hạt nhân xử lý văn bản:
         1. Chia nhỏ văn bản (Chunking).
@@ -82,7 +85,16 @@ class LightRAGPipeline(LightRAG):
         3. Trích xuất thực thể và quan hệ (Entities & Relations) bằng LLM.
         4. Lưu đồ thị tri thức (Knowledge Graph) vào PostgreSQL và ChromaDB.
         5. Cập nhật trạng thái Document.
+        
+        Args:
+            doc_id: Document UUID
+            text: Extracted text content
+            user_id: User UUID for multi-tenant isolation in ChromaDB
         """
+        # Resolve user_id: prefer explicit param, fallback to instance attribute
+        effective_user_id = user_id or self.user_id
+        user_id_str = str(effective_user_id) if effective_user_id else None
+        
         try:
             # Cập nhật trạng thái sang PROCESSING
             await self.doc_repo.update_status(doc_id, DocumentStatus.PROCESSING)
@@ -111,14 +123,28 @@ class LightRAGPipeline(LightRAG):
                 
                 chroma_ids.append(chunk_id)
                 chroma_docs.append(chunk_text)
-                chroma_metas.append({"document_id": str(doc_id), "chunk_index": i})
+                chunk_meta = {"document_id": str(doc_id), "chunk_index": i}
+                if user_id_str:
+                    chunk_meta["user_id"] = user_id_str
+                chroma_metas.append(chunk_meta)
 
-            # Lưu Chunks vào SQL & Chroma
+            # Lưu Chunks vào SQL
             await self.chunk_repo.bulk_insert(chunks_to_db)
-            chroma_client.chunks_collection.add(
+            
+            # Generate embeddings cho chunks (nếu embedding service available)
+            chunk_embeddings = await embedding_service.generate_embeddings(chroma_docs)
+
+            # Validate: chỉ dùng embeddings nếu TẤT CẢ đều khác zero vector
+            def _is_valid_embedding(emb) -> bool:
+                return emb is not None and any(v != 0.0 for v in emb)
+
+            has_valid_embeddings = all(_is_valid_embedding(emb) for emb in chunk_embeddings) if chunk_embeddings else False
+
+            chroma_client.add_chunks(
                 ids=chroma_ids,
                 documents=chroma_docs,
-                metadatas=chroma_metas
+                metadatas=chroma_metas,
+                embeddings=chunk_embeddings if has_valid_embeddings else None,
             )
 
             # Bước 2: Trích xuất tri thức (Entity & Relation Extraction)
@@ -137,7 +163,7 @@ class LightRAGPipeline(LightRAG):
             dedup_entities = self.extractor.deduplicate_entities(all_entities)
             dedup_relations = self._deduplicate_relations(all_relations)
 
-            # Chuẩn bị dữ liệu để lưu vào PostgreSQL
+            # Chuẩn bị dữ liệu entity để lưu vào PostgreSQL
             entity_data_list = [
                 {
                     "canonical_name": e.name,
@@ -146,31 +172,51 @@ class LightRAGPipeline(LightRAG):
                     "confidence": e.confidence
                 } for e in dedup_entities
             ]
-            relation_data_list = [
-                {
-                    "source_entity": r.source,
-                    "target_entity": r.target,
-                    "relation_type": r.relation_type,
-                    "description": r.description
-                } for r in dedup_relations
-            ]
 
             # Lưu Graph vào SQL
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.BUILDING_GRAPH)
-            await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id)
+            upserted_entities = await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id)
+
+            # Build mapping canonical_name → entity.id cho relations
+            entity_id_map = {e.canonical_name: e.id for e in upserted_entities}
+
+            # Chuẩn bị relation data với UUID FK (KHÔNG dùng string name)
+            relation_data_list = [
+                {
+                    "source_entity_id": entity_id_map.get(r.source),
+                    "target_entity_id": entity_id_map.get(r.target),
+                    "relation_type": r.relation_type,
+                    "description": r.description
+                }
+                for r in dedup_relations
+                if r.source in entity_id_map and r.target in entity_id_map  # Skip unresolved entities
+            ]
+
             await self.graph_repo.bulk_upsert_relations(relation_data_list, doc_id)
 
             # Bước 3: Lưu Graph vào ChromaDB (để phục vụ retrieval)
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EMBEDDING)
             entity_chroma_ids = [f"{doc_id}::entity::{e.name}" for e in dedup_entities]
             entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
-            entity_chroma_metas = [{"document_id": str(doc_id), "entity_name": e.name} for e in dedup_entities]
+            entity_chroma_metas = []
+            for e in dedup_entities:
+                e_meta = {"document_id": str(doc_id), "entity_name": e.name}
+                if user_id_str:
+                    e_meta["user_id"] = user_id_str
+                entity_chroma_metas.append(e_meta)
             
             if entity_chroma_ids:
-                chroma_client.entities_collection.add(
+                # Generate embeddings cho entities
+                entity_embeddings = await embedding_service.generate_embeddings(entity_chroma_docs)
+
+                # Validate: chỉ dùng embeddings nếu TẤT CẢ đều khác zero vector
+                has_valid_entity_embeddings = all(_is_valid_embedding(emb) for emb in entity_embeddings) if entity_embeddings else False
+
+                chroma_client.add_entities(
                     ids=entity_chroma_ids,
                     documents=entity_chroma_docs,
-                    metadatas=entity_chroma_metas
+                    metadatas=entity_chroma_metas,
+                    embeddings=entity_embeddings if has_valid_entity_embeddings else None,
                 )
 
             # Hoàn tất

@@ -30,6 +30,7 @@ export default function Chat() {
     lastFoundEntities,
     currentConversationId,
     createNewConversation,
+    setConversation,
   } = useChat();
 
   // Auto scroll to bottom
@@ -60,10 +61,12 @@ export default function Chat() {
     }
   };
 
-  const handleSelectConversation = async (convId: string) => {
-    // Conversation switching handled by useChat hook
-    // The hook auto-loads history when conversation changes
-    useChat().clearError();
+  const handleSelectConversation = (convId: string) => {
+    // Clear error when switching conversations
+    clearError();
+    // Set current conversation ID in store
+    // useEffect in useChat will auto-load history via currentConversationId watch
+    setConversation(convId);
   };
 
   const handleNewConversation = async () => {

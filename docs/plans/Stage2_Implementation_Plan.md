@@ -35,6 +35,10 @@ Chuyển đổi AetherTutor từ một công cụ tra cứu tri thức thành m�
 | **B4** | **ChromaDB collections không có `user_id` filter** | Metadata chunk/entity không chứa `user_id` | Leak context giữa users (khi có multi-user) |
 | **B5** | **Chưa có Authentication layer** | Không có JWT, không có auth middleware | Không thể phân quyền API endpoints Stage 2 |
 | **B6** | **API spec chưa có section cho Quiz/Flashcard/Notes** | `API_Specifications.md` chỉ có Post-MVP placeholder | Dev implement sai contract |
+| **B7** | **Lỗ hổng bảo mật `/test-ingest`** | Endpoint debug lộ diện trên production | Rủi ro nạp dữ liệu trái phép, bypass worker |
+| **B8** | **Mâu thuẫn Range Confidence** | Pydantic (0-100) vs DB (0-1) | Gây lỗi INSERT khi LLM trả về giá trị % |
+| **B9** | **Lệch pha Embedding Function** | ChromaDB dùng default thay vì config model | Giảm độ chính xác tìm kiếm ngữ nghĩa |
+| **B10** | **Enum `ProcessingStep` không đồng bộ** | Frontend có `QUEUED`, Backend thì không | Gây lỗi logic hiển thị trạng thái tài liệu |
 
 ### 2b.2 Chiến lược giải quyết
 
@@ -96,9 +100,16 @@ Tất cả blocking issues được gom vào **Sprint 0** (xem bên dưới). C�
     5. Apply thật sự
   - **Rollback plan:** Giữ script đảo ngược — restore `source_entity`/`target_entity` từ `canonical_name` lookup, revert FK về String(255)
 
-- **ChromaDB User Isolation:**
+- **ChromaDB & Search Hardening:**
   - Thêm `user_id` vào metadata khi upsert chunks và entities (`pipeline.py`, `retriever.py`)
   - Cập nhật `Retriever.retrieve()` để filter `where={"user_id": user_id}` trong mọi ChromaDB query
+  - **Cấu hình tường minh Embedding Function:** Cập nhật `ChromaClient` để khởi tạo collection với embedding model khớp với `settings.DEFAULT_EMBEDDING_MODEL`
+  - **Nâng cấp Retriever Prompt:** Cập nhật `Retriever.generate()` để sử dụng prompt Socratic/Feynman đồng bộ với `ChatService`
+
+- **Bug Fixes & Security [NEW ADDTIONS]:**
+  - **Security:** Đóng endpoint `/api/v1/documents/test-ingest` bằng `DEBUG` guard trong `settings`.
+  - **Enum Sync:** Thêm `QUEUED` vào `ProcessingStep` enum trong `app/models/document.py`.
+  - **Range Fix:** Điều chỉnh `ExtractedEntity.confidence` trong `app/schemas/lightrag.py` về dải `0.0 - 1.0`.
 
 - **API Specifications Update:**
   - Bổ sung section chính thức vào `API_Specifications.md` cho:

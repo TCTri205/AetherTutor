@@ -3,17 +3,22 @@ from fastapi.responses import StreamingResponse
 from typing import List, Optional
 import uuid
 import json
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..repositories.chat_repo import ChatRepository
 from ..repositories.graph_repo import GraphRepository
+from ..repositories.document_repo import DocumentRepository
 from ..core.retriever import Retriever
 from ..services.chat_service import ChatService
-from ..schemas.chat import ChatStreamRequest, ConversationRead, MessageRead, ConversationDetail, MessageResponse
+from ..services.cross_verification_service import cross_verification_service
+from ..schemas.chat import ChatStreamRequest, ConversationRead, MessageRead, ConversationDetail, MessageResponse, MultiDocChatRequest, MultiDocChatResponse
 from ..constants import RATE_LIMIT_CONVERSATION_CREATE, RATE_LIMIT_CHAT_STREAM
 from .limiter import limiter
+from .dependencies import get_optional_user_id, get_current_user_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 async def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
     chat_repo = ChatRepository(db)
@@ -82,8 +87,19 @@ async def chat_stream(
             graph_repo = GraphRepository(stream_session)
             retriever = Retriever(graph_repo)
 
+            # Extract and validate user_id from request header
+            raw_user_id = request.headers.get("X-User-Id")
+            user_id: str | None = None
+            if raw_user_id:
+                try:
+                    uuid.UUID(raw_user_id)
+                    user_id = raw_user_id
+                except ValueError:
+                    yield f"event: error\ndata: {json.dumps({'detail': 'Invalid X-User-Id header', 'code': 'INVALID_USER_ID'})}\n\n"
+                    return
+
             # Create a minimal service-like context for streaming
-            service = ChatService(chat_repo, retriever)
+            service = ChatService(chat_repo, retriever, user_id=user_id)
 
             async for chunk in service._stream_logic(
                 chat_repo=chat_repo,
@@ -145,6 +161,7 @@ async def socratic_chat_legacy(
     document_id: str,
     message: str = Body(..., embed=True),
     mode: str = "socratic",
+    user_id: Optional[str] = Depends(get_optional_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -156,7 +173,7 @@ async def socratic_chat_legacy(
     retriever = Retriever(graph_repo)
 
     doc_uuid = uuid.UUID(document_id)
-    context, _ = await retriever.retrieve(message, document_id)
+    context, _ = await retriever.retrieve(message, document_id, user_id=user_id)
     context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 
     from ..services.llm_service import llm_service
@@ -167,3 +184,115 @@ async def socratic_chat_legacy(
         "response": response.choices[0].message.content,
         "context_used": context
     }
+
+
+# =============================================
+# Sprint 4: Multi-Document Chat Endpoint
+# =============================================
+
+@router.post("/multi-doc", response_model=MultiDocChatResponse)
+async def chat_multi_doc(
+    request: MultiDocChatRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Chat across multiple documents with cross-verification.
+
+    - **message**: User's question/message
+    - **document_ids**: Optional list of doc UUIDs. If None, searches all user docs.
+    - **conversation_id**: Optional existing conversation ID
+    - **mode**: 'socratic' or 'feynman'
+    - **enable_cross_verification**: Enable LLM contradiction detection
+
+    Returns AI response with source attribution and contradiction analysis.
+    """
+    graph_repo = GraphRepository(db)
+    retriever = Retriever(graph_repo)
+
+    # Convert document_ids to strings for retriever
+    doc_ids = [str(d) for d in request.document_ids] if request.document_ids else None
+
+    # Multi-document retrieval
+    context, entity_names, cross_verification = await retriever.retrieve_multi(
+        query=request.message,
+        user_id=str(user_id),
+        document_ids=doc_ids,
+        scope="document" if doc_ids else "user_global",
+    )
+
+    # Build context string with source attribution
+    context_parts = []
+    for ctx in context:
+        doc_id = ctx.get("metadata", {}).get("document_id", "unknown")
+        doc_short_id = doc_id[:8] if doc_id != "unknown" else "unknown"
+        context_parts.append(f"[From {doc_short_id}] {ctx['content']}")
+    
+    context_str = "\n\n".join(context_parts)
+
+    # Build prompt based on mode
+    mode_instruction = {
+        "socratic": "Ask guiding questions to help the user discover the answer themselves.",
+        "feynman": "Explain in simple terms as if teaching a beginner.",
+    }.get(request.mode, "Answer the question based on the context.")
+
+    prompt = f"""You are a tutor assistant. {mode_instruction}
+
+Answer based ONLY on the provided context. If context doesn't contain the answer, say you don't know.
+
+Context (with source document IDs):
+{context_str}
+
+User Question: {request.message}
+
+Your Response:
+"""
+
+    # Get LLM response
+    from ..services.llm_service import llm_service
+    llm_response = await llm_service.get_chat_completion([
+        {"role": "user", "content": prompt}
+    ])
+    response_content = llm_response.choices[0].message.content
+
+    # Determine documents involved
+    doc_ids_involved = list(set([
+        ctx.get("metadata", {}).get("document_id", "unknown")
+        for ctx in context
+        if ctx.get("metadata", {}).get("document_id")
+    ]))
+
+    # Run cross-verification if enabled and multiple docs involved
+    cross_ver_summary = None
+    if request.enable_cross_verification and len(doc_ids_involved) >= 2:
+        # Prepare document contexts
+        doc_contexts = {}
+        for ctx in context:
+            doc_id = ctx.get("metadata", {}).get("document_id", "unknown")
+            if doc_id not in doc_contexts:
+                doc_contexts[doc_id] = {
+                    "document_id": doc_id,
+                    "document_title": f"Document {doc_id[:8]}",
+                    "context": [],
+                }
+            doc_contexts[doc_id]["context"].append(ctx)
+
+        # Run cross-verification
+        try:
+            cv_result = await cross_verification_service.cross_check(
+                query=request.message,
+                document_contexts=list(doc_contexts.values()),
+            )
+            cross_ver_summary = cv_result
+        except Exception as e:
+            # Don't fail if cross-verification fails
+            logger.warning(f"Cross-verification failed: {e}", exc_info=True)
+
+    return MultiDocChatResponse(
+        response=response_content,
+        context_used=context[:20],  # Limit context size
+        documents_involved=doc_ids_involved,
+        cross_verification=cross_ver_summary,
+        mode=request.mode,
+    )
+

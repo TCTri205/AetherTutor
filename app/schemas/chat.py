@@ -38,3 +38,37 @@ class MessageResponse(BaseModel):
     """Legacy response for backward compatibility"""
     response: str
     context_used: List[dict] = []
+
+
+# =============================================
+# Sprint 4: Multi-Document Chat Schemas
+# =============================================
+
+class MultiDocChatRequest(BaseModel):
+    """Request for multi-document chat with cross-verification."""
+    message: str = Field(..., description="User's message")
+    document_ids: Optional[List[uuid.UUID]] = Field(
+        default=None,
+        description="List of document UUIDs to include in chat. If None, chats with all user docs."
+    )
+    conversation_id: Optional[uuid.UUID] = Field(
+        None,
+        description="Conversation ID (if continuing existing chat)"
+    )
+    mode: str = Field(
+        default="socratic",
+        description="Tutor mode: 'socratic' or 'feynman'"
+    )
+    enable_cross_verification: bool = Field(
+        default=True,
+        description="Enable cross-document contradiction detection"
+    )
+
+
+class MultiDocChatResponse(BaseModel):
+    """Response for multi-document chat."""
+    response: str = Field(..., description="AI response")
+    context_used: List[dict] = Field(default_factory=list, description="Context snippets used")
+    documents_involved: List[str] = Field(default_factory=list, description="Document IDs involved in response")
+    cross_verification: Optional[dict] = Field(None, description="Cross-verification summary (if enabled)")
+    mode: str = Field(..., description="Tutor mode used")

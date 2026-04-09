@@ -23,34 +23,74 @@ Sau khi hoàn tất, bạn có thể truy cập:
 
 ---
 
-## 🛠️ Local Development (Backend & Frontend)
+## 🛠️ Local Development (Hybrid Mode)
 
-Nếu bạn muốn phát triển hoặc chạy local mà không dùng Docker cho toàn phần:
+**Khuyến nghị:** Chạy Backend + Frontend trực tiếp trên host (hot-reload), chỉ dùng Docker cho Database services.
 
-### 1. Infrastructure (Cần thiết)
+### 1. Khởi động Data Layer (Docker)
 ```bash
-docker compose up -d db redis chromadb
+# Chỉ chạy 3 services: PostgreSQL, Redis, ChromaDB
+docker compose -f docker-compose.data.yml up -d
+
+# Kiểm tra status
+docker compose -f docker-compose.data.yml ps
+
+# Xem logs
+docker compose -f docker-compose.data.yml logs -f
 ```
 
-### 2. Backend Setup
+### 2. Backend Setup (Host)
 ```bash
 # Tạo và kích hoạt venv
 python -m venv venv
 .\venv\Scripts\Activate.ps1  # Windows
+source venv/bin/activate     # macOS/Linux
 
 # Cài đặt dependencies
 pip install -r requirements.txt
 
-# Khởi chạy Worker & API
+# Chạy migration
+alembic upgrade head
+
+# Chạy Worker (background jobs - terminal 1)
 arq app.worker.tasks.WorkerSettings
+
+# Chạy API (hot-reload - terminal 2)
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Frontend Setup
+### 3. Frontend Setup (Host)
 ```bash
 cd frontend
 npm install
 npm run dev
+```
+
+### 4. Truy cập
+- **Frontend (Vite):** `http://localhost:5173`
+- **Backend API:** `http://localhost:8000`
+- **Swagger Docs:** `http://localhost:8000/docs`
+- **API Health:** `http://localhost:8000/health`
+
+### 5. Dừng Data Layer
+```bash
+docker compose -f docker-compose.data.yml down
+```
+
+---
+
+## 🐳 Full Docker Stack (Production)
+
+Để chạy toàn bộ hệ thống trong Docker (không hot-reload):
+
+```bash
+# Khởi chạy toàn bộ stack
+docker compose up --build -d
+
+# Truy cập
+# - Frontend: http://localhost:3000
+# - API: http://localhost:8001
+# - Docs: http://localhost:8001/docs
 ```
 
 ---

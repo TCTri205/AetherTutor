@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple
 import uuid
 from .base import BaseRepository
 
+
 class DocumentRepository(BaseRepository[Document]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, Document)
@@ -100,3 +101,28 @@ class DocumentRepository(BaseRepository[Document]):
 
     async def delete(self, document_id: uuid.UUID) -> bool:
         return await super().delete(document_id)
+
+    async def get_by_id_with_user(
+        self, document_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Optional[Document]:
+        """Get document by ID and verify ownership."""
+        stmt = select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_by_user(
+        self, user_id: uuid.UUID, skip: int = 0, limit: int = 100
+    ) -> List[Document]:
+        """Get all documents for a user."""
+        stmt = (
+            select(Document)
+            .where(Document.user_id == user_id)
+            .order_by(Document.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())

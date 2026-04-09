@@ -21,6 +21,7 @@ from ..services.document_service import DocumentService
 from ..services.llm_service import llm_service
 from ..constants import RATE_LIMIT_DOCUMENT_UPLOAD, RATE_LIMIT_DOCUMENT_DELETE
 from .limiter import limiter
+from ..config import settings
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -35,7 +36,15 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
     """
     Ingest text content directly (Synchronous) for testing/debug.
     Bypasses the background worker.
+    
+    SECURITY: Chỉ hoạt động trong chế độ DEBUG hoặc development.
     """
+    if not settings.DEBUG and settings.APP_ENV == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Endpoint này bị vô hiệu hóa trong production. Set DEBUG=true để kích hoạt.",
+        )
+    
     doc_repo = DocumentRepository(db)
     chunk_repo = ChunkRepository(db)
     graph_repo = GraphRepository(db)

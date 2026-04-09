@@ -13,6 +13,9 @@ import {
   Cloud,
   Lock,
   Loader2,
+  Brain,
+  FileQuestion,
+  FileText,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -27,6 +30,9 @@ const navItems = [
   { path: '/vault', label: 'Knowledge Vault', icon: Library },
   { path: '/chat', label: 'Socratic Tutor', icon: MessageSquareQuote },
   { path: '/graph', label: 'Graph Explorer', icon: Share2 },
+  { path: '/flashcards', label: 'Flashcards', icon: Brain },
+  { path: '/quiz', label: 'Quiz Examiner', icon: FileQuestion },
+  { path: '/notes', label: 'Zettelkasten', icon: FileText },
 ];
 
 export default function RootLayout() {
