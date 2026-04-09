@@ -1,6 +1,7 @@
 import uuid
-from sqlalchemy import String, Text, Enum
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Text, Enum, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
 import enum
 
@@ -11,6 +12,7 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "FAILED"
 
 class ProcessingStep(str, enum.Enum):
+    QUEUED = "QUEUED"                    # Chờ trong hàng đợi
     INITIAL = "INITIAL"                  # Mặc định khi PENDING
     EXTRACTING = "EXTRACTING"            # Đang đọc PDF
     CHUNKING = "CHUNKING"                # Chia nhỏ văn bản
@@ -23,6 +25,9 @@ class Document(Base, TimestampMixin):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
     filename: Mapped[str] = mapped_column(String(255))
     content_hash: Mapped[str] = mapped_column(String(64), index=True, unique=True)
     status: Mapped[DocumentStatus] = mapped_column(
@@ -33,6 +38,10 @@ class Document(Base, TimestampMixin):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    # Relationships
+    user = relationship("User", back_populates="documents")
+    quizzes = relationship("Quiz", back_populates="document")
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename={self.filename}, status={self.status})>"
