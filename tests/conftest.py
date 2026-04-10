@@ -79,7 +79,8 @@ async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, Non
     Override dependency get_db để dùng test_db.
     Mock arq_pool để không cần Redis thật khi test API.
     """
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, patch
+    
     mock_pool = AsyncMock()
     mock_pool.enqueue_job = AsyncMock(return_value=None)
     app.state.arq_pool = mock_pool
@@ -88,13 +89,13 @@ async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, Non
         yield test_db
 
     app.dependency_overrides[get_db] = override_get_db
-    
+
     async with AsyncClient(
-        transport=ASGITransport(app=app), 
+        transport=ASGITransport(app=app),
         base_url="http://testserver"
     ) as client:
         yield client
-    
+
     app.dependency_overrides.clear()
 
 # --- LLM Mocking Fixture ---
@@ -102,13 +103,12 @@ async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, Non
 @pytest.fixture(autouse=True)
 def patch_llm_service(monkeypatch):
     """
-    Tự động patch LLM service nếu USE_LLM_MOCK=true.
+    Tự động patch LLM service trong TẤT CẢ tests.
+    Integration tests LUÔN dùng mock để không phụ thuộc LLM thật.
     """
-    if settings.USE_LLM_MOCK:
-        mock = MockLLMService()
-        monkeypatch.setattr("app.services.llm_service.llm_service", mock)
-        return mock
-    return None
+    mock = MockLLMService()
+    monkeypatch.setattr("app.services.llm_service.llm_service", mock)
+    return mock
 
 
 # --- Data Fixtures ---
@@ -128,7 +128,7 @@ async def processed_document(test_db: AsyncSession):
     from app.models.user import User
 
     default_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
-    
+
     # Đảm bảo user tồn tại
     user = await test_db.get(User, default_user_id)
     if not user:

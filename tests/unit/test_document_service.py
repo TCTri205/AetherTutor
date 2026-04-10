@@ -17,8 +17,12 @@ def mock_arq_pool():
     return pool
 
 @pytest.fixture
-def doc_service(mock_session, mock_arq_pool):
-    return DocumentService(mock_session, mock_arq_pool)
+def mock_user_id():
+    return uuid.uuid4()
+
+@pytest.fixture
+def doc_service(mock_session, mock_arq_pool, mock_user_id):
+    return DocumentService(mock_session, mock_arq_pool, mock_user_id)
 
 @pytest.mark.asyncio
 async def test_upload_new_document_success(doc_service, mock_session, mock_arq_pool):
@@ -62,7 +66,7 @@ async def test_upload_duplicate_document():
 
     # Mock existing doc
     existing_doc = MagicMock()
-    
+
     # Mock repo với patch DocumentRepository
     with patch("app.services.document_service.DocumentRepository") as MockRepo:
         mock_repo_instance = MockRepo.return_value
@@ -72,8 +76,9 @@ async def test_upload_duplicate_document():
         mock_session = AsyncMock()
         mock_arq_pool = AsyncMock()
         mock_arq_pool.enqueue_job = AsyncMock()
-        
-        service = DocumentService(mock_session, mock_arq_pool)
+        mock_user_id = uuid.uuid4()
+
+        service = DocumentService(mock_session, mock_arq_pool, mock_user_id)
 
         doc, is_duplicate = await service.upload_document(mock_file)
 

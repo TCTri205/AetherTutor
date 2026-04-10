@@ -287,6 +287,7 @@ class TestReviewFlashcard:
         mock_db.execute.return_value = mock_result
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
+        mock_db.add = MagicMock()  # db.add() is sync in SQLAlchemy
 
         service = SM2Service()
         result = await service.review_flashcard(

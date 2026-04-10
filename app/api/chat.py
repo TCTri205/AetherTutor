@@ -70,6 +70,7 @@ async def chat_stream(
     async def stream_generator():
         async with AsyncSessionLocal() as stream_session:
             chat_repo = ChatRepository(stream_session)
+            doc_repo = DocumentRepository(stream_session)
 
             # Get or create conversation within the stream session
             conv_id = stream_request.conversation_id
@@ -80,6 +81,12 @@ async def chat_stream(
                     return
                 resolved_conv_id = conv.id
             else:
+                # Validate document exists before creating conversation
+                doc = await doc_repo.get_by_id(stream_request.document_id)
+                if not doc:
+                    yield f"event: error\ndata: {json.dumps({'detail': f'Document {stream_request.document_id} not found', 'code': 'DOCUMENT_NOT_FOUND'})}\n\n"
+                    return
+
                 new_conv = await chat_repo.create_conversation(stream_request.document_id)
                 await stream_session.commit()
                 resolved_conv_id = new_conv.id

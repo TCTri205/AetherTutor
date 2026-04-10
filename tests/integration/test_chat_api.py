@@ -3,6 +3,7 @@ import uuid
 import json
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from unittest.mock import patch
 
 @pytest.mark.asyncio
 async def test_create_conversation(async_client: AsyncClient, processed_document):
@@ -12,7 +13,7 @@ async def test_create_conversation(async_client: AsyncClient, processed_document
         f"/api/v1/chat/conversations/{doc_id}",
         json={"title": "Test Conversation"}
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["document_id"] == doc_id
@@ -25,7 +26,7 @@ async def test_list_conversations(async_client: AsyncClient, processed_document)
     doc_id = str(processed_document.id)
     # Tạo sẵn 1 cái
     await async_client.post(f"/api/v1/chat/conversations/{doc_id}", json={"title": "C1"})
-    
+
     response = await async_client.get(f"/api/v1/chat/conversations/{doc_id}")
     assert response.status_code == 200
     data = response.json()
@@ -33,29 +34,41 @@ async def test_list_conversations(async_client: AsyncClient, processed_document)
     assert len(data) >= 1
 
 @pytest.mark.asyncio
-async def test_chat_stream_sse(async_client: AsyncClient, processed_document):
+async def test_chat_stream_sse(async_client: AsyncClient, processed_document, test_db):
     """Test luồng chat streaming (SSE)"""
-    doc_id = str(processed_document.id)
-    payload = {
-        "document_id": doc_id,
-        "message": "Albert Einstein là ai?",
-        "mode": "socratic"
-    }
+    # Patch AsyncSessionLocal để dùng test_db session
+    class MockSessionCM:
+        def __init__(self, session):
+            self.session = session
+        async def __aenter__(self):
+            return self.session
+        async def __aexit__(self, *args):
+            pass
     
-    # Sử dụng stream context manager của httpx
-    async with async_client.stream("POST", "/api/v1/chat/stream", json=payload) as response:
-        assert response.status_code == 200
-        assert response.headers["content-type"].startswith("text/event-stream")
-        
-        events = []
-        async for line in response.aiter_lines():
-            if line.startswith("event:"):
-                events.append(line.replace("event:", "").strip())
-        
-        # Verify events quan trọng
-        assert "meta" in events
-        assert "chunk" in events
-        assert "done" in events
+    mock_cm = MockSessionCM(test_db)
+    
+    with patch("app.database.AsyncSessionLocal", return_value=mock_cm):
+        doc_id = str(processed_document.id)
+        payload = {
+            "document_id": doc_id,
+            "message": "Albert Einstein là ai?",
+            "mode": "socratic"
+        }
+
+        # Sử dụng stream context manager của httpx
+        async with async_client.stream("POST", "/api/v1/chat/stream", json=payload) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+
+            events = []
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    events.append(line.replace("event:", "").strip())
+
+            # Verify events quan trọng
+            assert "meta" in events
+            assert "chunk" in events
+            assert "done" in events
 
 @pytest.mark.asyncio
 async def test_get_chat_history(async_client: AsyncClient, processed_document):
