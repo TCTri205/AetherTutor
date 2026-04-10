@@ -28,6 +28,8 @@ redis>=5.0.0
 # Processing
 pypdf>=3.10.0
 tiktoken>=0.7.0
+spacy>=3.7.0
+
 
 # Notifications
 aiosmtplib>=3.0.0

@@ -16,7 +16,9 @@ from ..services.chroma_client import chroma_client
 from ..services.pdf_extractor import pdf_extractor
 from ..services.llm_service import llm_service
 from ..services.notification_service import get_notification_service
+from ..config import settings
 from ..core.entity_extractor import EntityExtractor
+
 from ..core.retriever import Retriever
 from ..core.pipeline import LightRAGPipeline
 from ..core.exceptions import PermanentProcessingError
@@ -93,7 +95,8 @@ async def process_document_task(ctx: Any, doc_id_str: str):
             raise PermanentProcessingError(f"Tài liệu {doc_id} không tồn tại trong database.")
 
         # Khởi tạo pipeline components (truyền user_id để ChromaDB metadata có user isolation)
-        extractor = EntityExtractor()
+        extractor = EntityExtractor(config=settings)
+
         retriever = Retriever(graph_repo)
         pipeline = LightRAGPipeline(doc_repo, chunk_repo, graph_repo, extractor, retriever, user_id=doc.user_id)
 

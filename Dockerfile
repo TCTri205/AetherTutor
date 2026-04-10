@@ -25,6 +25,10 @@ WORKDIR /app
 # Copy dependencies từ builder stage
 COPY --from=builder /install /usr/local
 
+# Tải spaCy model (English small) cho FastExtractor
+RUN python -m spacy download en_core_web_sm
+
+
 # Copy source code (không include những file trong .dockerignore)
 COPY alembic/ alembic/
 COPY alembic.ini .

@@ -151,32 +151,22 @@ class LightRAGPipeline(LightRAG):
 
             # Bước 2: Trích xuất tri thức (Entity & Relation Extraction)
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING_ENTITIES)
+            
+            method = getattr(self.extractor._config, "ENTITY_EXTRACTION_METHOD", "llm") if hasattr(self.extractor, "_config") and self.extractor._config else "llm"
+            logger.info(f"Starting entity extraction: {len(raw_chunks)} chunks (method={method})")
+
+            extraction = await self.extractor.extract(raw_chunks)
+            
             all_entities = []
             all_relations = []
+            
+            if extraction:
+                all_entities = extraction.entities
+                all_relations = extraction.relations
+                logger.info(f"Entity extraction complete: {len(all_entities)} entities, {len(all_relations)} relations")
+            else:
+                logger.warning("Entity extraction returned no results")
 
-            # OPTIMIZATION: Gom nhiều chunks vào 1 LLM call để giảm số lượng API calls
-            # Mỗi batch gồm ENTITY_EXTRACTION_BATCH_SIZE chunks (mặc định = 5)
-            batch_size = ENTITY_EXTRACTION_BATCH_SIZE
-            total_chunks = len(raw_chunks)
-            logger.info(f"Starting entity extraction: {total_chunks} chunks in batches of {batch_size}")
-
-            for batch_start in range(0, total_chunks, batch_size):
-                batch_end = min(batch_start + batch_size, total_chunks)
-                batch_chunks = raw_chunks[batch_start:batch_end]
-                
-                # Gộp các chunks thành 1 text với separator
-                combined_text = "\n\n---\n\n".join(batch_chunks)
-                
-                extraction = await self.extractor.extract(combined_text)
-                if extraction:
-                    all_entities.extend(extraction.entities)
-                    all_relations.extend(extraction.relations)
-                
-                # Log progress mỗi 10 batches
-                batch_num = (batch_start // batch_size) + 1
-                total_batches = (total_chunks + batch_size - 1) // batch_size
-                if batch_num % 10 == 0 or batch_num == total_batches:
-                    logger.info(f"Entity extraction progress: {batch_num}/{total_batches} batches ({batch_end}/{total_chunks} chunks done)")
 
             # Tối ưu hóa: Loại bỏ các thực thể trùng lặp bằng cách gộp chung (Deduplication)
             dedup_entities = self.extractor.deduplicate_entities(all_entities)

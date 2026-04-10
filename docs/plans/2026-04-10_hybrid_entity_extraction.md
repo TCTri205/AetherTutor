@@ -1,7 +1,17 @@
-# Kế hoạch triển khai Hybrid Entity Extraction (Tối ưu 8GB RAM) — V2.0
+# Kế hoạch triển khai Hybrid Entity Extraction (Tối ưu 8GB RAM) — V2.4
 
 Hệ thống hiện tại đang phụ thuộc hoàn toàn vào LLM lớn để trích xuất, gây quá tải cho cấu hình CPU-only 8GB RAM.
 Giải pháp Hybrid này tối ưu hóa bộ nhớ bằng cách kết hợp spaCy (nhanh, nhẹ) + LLM fallback (chính xác, chỉ khi cần).
+
+**Changelog V2.3 → V2.4:**
+- 🔴 **Fix blocking:** Thêm section **4. Pipeline Integration** với code cụ thể — pipeline truyền `List[str]` thay vì `str` cho extractor.
+- 🔴 **Fix blocking:** Spec đầy đủ `_extract_llm_batch()` — dùng lại prompt + schema hiện tại của `extract()`.
+- 🟡 **Fix magic number:** Thay `i*5` bằng `i * ENTITY_EXTRACTION_BATCH_SIZE`.
+- 🟡 **Fix merge code:** Thêm pseudocode đầy đủ cho `_merge_results()` với `rel.source`/`rel.target` (không phải `source_id`).
+- 🟡 **Fix type mapping:** Thêm lại `SPACY_TO_STANDARD_TYPES` vào `fast_extractor.py`.
+- 🟡 **Fix constants placement:** Chuyển `ENTITY_EXTRACTION_METHOD` sang `config.py` (đúng design).
+- 🟢 **Fix return type:** Giữ `Optional[ExtractionResult]` cho backward compat.
+- 📝 **Fix model name:** Sửa lại đúng model thực tế `hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M` (Ollama).
 
 ---
 
@@ -10,54 +20,51 @@ Giải pháp Hybrid này tối ưu hóa bộ nhớ bằng cách kết hợp spaC
 ### Hiện tại (Pipeline đang chạy)
 | Thành phần | Trạng thái |
 |-----------|-----------|
-| **Entity Extraction** | LLM 100% (Qwen2.5-1.5B) — batch 5 chunks/call |
-| **Pipeline** | `LightRAGPipeline.ingest_text()` — batch loop 0→total_chunks step 5 |
+| **Entity Extraction** | LLM 100% (Qwen2.5-1.5B GGUF Q4_K_M) |
 | **Worker Timeout** | 1800s (30 phút) |
-| **Batch Size** | `ENTITY_EXTRACTION_BATCH_SIZE = 5` |
-| **Entity Extractor** | `EntityExtractor` — gọi `llm_service.structured_extraction()` trực tiếp |
-| **Document stuck** | `AI-Video-Summarizer.pdf` — PENDING/INITIAL (đã flush Redis) |
-| **RAM Usage** | ~1.5GB cho Ollama + ~500MB cho app + Docker |
+| **Batch Size** | `ENTITY_EXTRACTION_BATCH_SIZE = 5` (trong `constants.py`) |
+| **RAM Usage** | ~1.2GB cho Ollama (Qwen2.5-1.5B) + ~0.5GB cho app |
+| **EntityExtractor.extract()** | Nhận `text: str`, gọi `llm_service.structured_extraction(prompt, ExtractionResult)` |
 
-### Vấn đề
-1. **LLM 1.5B quá nặng** cho entity extraction — 40 batches × ~8s = 320s
+### Vấn đề cần giải quyết
+1. **LLM gọi quá nhiều lần** — mỗi batch 5 chunks = 1 LLM call, document lớn có thể 40+ calls
 2. **Không có fallback** — nếu LLM fail, không có entity nào
-3. **Relations extraction phụ thuộc hoàn toàn vào LLM** — không có phương án thay thế
-4. **Không có config toggle** — không thể switch giữa LLM/Hybrid/Rule-based
+3. **Relations extraction phụ thuộc hoàn toàn vào LLM** — cần đảm bảo luôn có ít nhất 1 batch LLM chạy
+4. **Không có config toggle** — không thể switch phương pháp trích xuất
 
 ---
 
-## 🏗️ KIẾN TRÚC HYBRID (MỚI)
+## 🏗️ KIẾN TRÚC HYBRID (V2.4)
 
-```
-Document Text
-     ↓
-┌─────────────────────────────────────┐
-│  Lớp 1: Fast Extractor (spaCy)    │ ← ~2s, ~15MB RAM
-│  - NER: PERSON, ORG, GPE, PRODUCT  │
-│  - Dependency parsing cho relations│
-│  - Rule-based keyword extraction   │
-└──────────────┬──────────────────────┘
+```text
+Document Chunks (từ pipeline)
+      ↓
+┌───────────────────────────────────────┐
+│ Bước 1: Fast Extractor (spaCy)        │ ← Toàn bộ text gộp lại (~1-2s, ~50MB RAM)
+│ - NER: PERSON, ORG, GPE, PRODUCT...   │
+│ - Type mapping → hệ thống chuẩn        │
+└──────────────┬────────────────────────┘
                ↓
-     Có đủ entities không?
-        ↓           ↓
-     CÓ (≥10)      KHÔNG (<10)
-        ↓           ↓
-   ┌────┴────┐  ┌──────────────────────┐
-   │  DONE   │  │ Lớp 2: LLM Fallback  │ ← ~8s/batch
-   └─────────┘  │ Qwen2.5-1.5B         │
-                │ Gọi khi cần bổ sung  │
-                └──────────┬───────────┘
-                           ↓
-                    Merge results
-                           ↓
-   ┌───────────────────────────────────┐
-   │ Deduplication + Normalization     │
-   │ - Alias resolution                │
-   │ - Confidence scoring              │
-   │ - Relation deduplication          │
-   └──────────────┬────────────────────┘
-                  ↓
-          Knowledge Graph
+┌───────────────────────────────────────┐
+│ Bước 2: Mandatory LLM Batch (Batch #1)│ ← LUÔN CHẠY để lấy Relations
+│ - 5 chunks đầu (ENTITY_EXTRACTION...  │
+│ - Entities + Relations quality cao    │
+└──────────────┬────────────────────────┘
+               ↓
+      Đã đủ Entities chưa? (≥ 30)
+         ↓               ↓
+      RỒI (Dừng)      CHƯA (Tiếp tục)
+         ↓               ↓
+    ┌────┴────┐    ┌────────────────────────────────────────┐
+    │  Merge  │    │ LLM Fallback Loop (Batch #2 → #10)     │
+    └─────────┘    │ - Chỉ chạy nếu thiếu thực thể          │
+                   │ - Giới hạn ENTITY_EXTRACTION_MAX_...   │
+                   │ - try/except từng batch                │
+                   └──────────────────┬─────────────────────┘
+                                      ↓
+                        Merge + Dedup + Confidence Max
+                                      ↓
+                               Knowledge Graph
 ```
 
 ---
@@ -67,28 +74,24 @@ Document Text
 ### 1. Cấu hình & Constants
 
 #### [MODIFY] `app/constants.py`
-Thêm các constants mới:
+Thêm 2 constants nội bộ (**KHÔNG duplicate sang config.py/env**):
 ```python
-# Entity Extraction Strategy
-ENTITY_EXTRACTION_METHOD = "hybrid"  # "llm" | "hybrid" | "spacy_only"
-ENTITY_EXTRACTION_MIN_ENTITIES = 10  # Ngưỡng kích hoạt LLM fallback
-ENTITY_EXTRACTION_MAX_LLM_BATCHES = 10  # Giới hạn LLM calls để tránh quá tải
+# Hybrid Entity Extraction
+ENTITY_EXTRACTION_MIN_ENTITIES = 30       # Ngưỡng dừng fallback LLM
+ENTITY_EXTRACTION_MAX_LLM_BATCHES = 10    # Giới hạn LLM calls tối đa
 ```
 
 #### [MODIFY] `app/config.py`
-Thêm setting mới:
+Thêm setting phương pháp vào Settings class:
 ```python
 # Entity Extraction
 ENTITY_EXTRACTION_METHOD: str = "hybrid"  # "llm" | "hybrid" | "spacy_only"
-USE_LLM_FALLBACK: bool = True  # Fallback to LLM nếu fast extractor không đủ
 ```
 
 #### [MODIFY] `.env.example`
-Thêm biến môi trường:
 ```env
 # Entity Extraction
 ENTITY_EXTRACTION_METHOD=hybrid  # llm | hybrid | spacy_only
-USE_LLM_FALLBACK=true  # fallback khi fast extractor không đủ entities
 ```
 
 ---
@@ -96,243 +99,479 @@ USE_LLM_FALLBACK=true  # fallback khi fast extractor không đủ entities
 ### 2. Core Components
 
 #### [NEW] `app/core/fast_extractor.py`
-Tạo lớp `FastExtractor` — Singleton, load spaCy model 1 lần:
+Tạo lớp `FastExtractor` với **Thread-safe Singleton** và **Type Mapping** chuẩn hóa spaCy labels → hệ thống types:
+
 ```python
 """
-Fast Entity Extractor — spaCy + Dependency Parsing
-Dùng để extract entities/relations NHANH (không cần LLM).
+Fast Entity Extractor — spaCy
+Dùng để extract entities NHANH (không cần LLM).
 """
 import spacy
-from typing import List, Optional
-from ..schemas.lightrag import ExtractedEntity, EntityRelation, ExtractionResult
+import threading
+import logging
+from typing import List
+from ..schemas.lightrag import ExtractedEntity, ExtractionResult
+
+logger = logging.getLogger(__name__)
+
+# Map spaCy NER labels → hệ thống entity types chuẩn
+SPACY_TO_STANDARD_TYPES = {
+    "PERSON": "PERSON",
+    "ORG": "ORGANIZATION",
+    "GPE": "LOCATION",
+    "LOC": "LOCATION",
+    "PRODUCT": "TECHNOLOGY",
+    "WORK_OF_ART": "CONCEPT",
+    "EVENT": "EVENT",
+    "LAW": "CONCEPT",
+    "LANGUAGE": "CONCEPT",
+    "NORP": "CONCEPT",
+    "FAC": "LOCATION",
+    "MONEY": "CONCEPT",
+    "QUANTITY": "CONCEPT",
+    "DATE": "CONCEPT",
+    "TIME": "CONCEPT",
+    "PERCENT": "CONCEPT",
+    "ORDINAL": "CONCEPT",
+    "CARDINAL": "CONCEPT",
+}
 
 class FastExtractor:
-    """Singleton — load model 1 lần, dùng cho toàn bộ lifecycle"""
+    """Thread-safe Singleton cho Model spaCy (~50MB)"""
     _instance = None
-    _nlp = None
-    
-    @classmethod
-    def get_instance(cls):
-        if cls._instance is None:
-            cls._instance = cls()
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                try:
+                    cls._instance._nlp = spacy.load("en_core_web_sm")
+                    logger.info("spaCy model 'en_core_web_sm' loaded successfully")
+                except OSError as e:
+                    logger.error(
+                        "spaCy model 'en_core_web_sm' not found. "
+                        "Install with: python -m spacy download en_core_web_sm"
+                    )
+                    raise RuntimeError(
+                        "spaCy model required for FastExtractor is missing. "
+                        "Run: python -m spacy download en_core_web_sm"
+                    ) from e
         return cls._instance
-    
-    def __init__(self):
-        if self._nlp is None:
-            self._nlp = spacy.load("en_core_web_sm")
-    
+
     def extract(self, text: str) -> ExtractionResult:
-        """Extract entities + relations từ text bằng spaCy"""
+        """Extract entities từ text bằng spaCy"""
         doc = self._nlp(text)
-        
-        # Entities từ spaCy NER
+
         entities = []
         for ent in doc.ents:
+            standard_type = SPACY_TO_STANDARD_TYPES.get(ent.label_, "CONCEPT")
             entities.append(ExtractedEntity(
                 name=ent.text.strip().title(),
-                entity_type=ent.label_,
-                description=f"{ent.label_} entity mentioned in context",
+                entity_type=standard_type,
+                description=f"{ent.label_} entity extracted from context",
                 confidence=0.8
             ))
-        
-        # Relations từ dependency parsing
-        relations = self._extract_relations_dependency(doc, entities)
-        
-        return ExtractionResult(entities=entities, relations=relations)
-    
-    def _extract_relations_dependency(
-        self, 
-        doc: spacy.tokens.Doc, 
-        entities: List[ExtractedEntity]
-    ) -> List[EntityRelation]:
-        """
-        Extract relations từ dependency tree của spaCy.
-        Ví dụ: "Python created by Guido" → (Guido, Python, "created_by")
-        """
+
+        # spaCy không trích xuất relations chất lượng cho technical docs
         relations = []
-        entity_names = {e.name.lower() for e in entities}
-        
-        for token in doc:
-            if token.dep_ in ("nsubj", "dobj", "attr", "pobj"):
-                if token.head.pos_ == "VERB":
-                    subject = self._find_subject(token)
-                    obj = self._find_object(token)
-                    
-                    if subject and obj:
-                        subj_name = subject.text.strip().title()
-                        obj_name = obj.text.strip().title()
-                        
-                        if subj_name.lower() in entity_names and obj_name.lower() in entity_names:
-                            relations.append(EntityRelation(
-                                source=subj_name,
-                                target=obj_name,
-                                relation_type=token.head.lemma_,
-                                description=f"{subj_name} {token.head.text} {obj_name}"
-                            ))
-        
-        return relations
-    
-    def _find_subject(self, token) -> Optional[spacy.tokens.Token]:
-        for child in token.head.children:
-            if child.dep_ in ("nsubj", "nsubjpass"):
-                return child
-        return None
-    
-    def _find_object(self, token) -> Optional[spacy.tokens.Token]:
-        for child in token.head.children:
-            if child.dep_ in ("dobj", "pobj", "attr"):
-                return child
-        return None
+
+        return ExtractionResult(entities=entities, relations=relations)
 ```
 
 ---
 
-### 3. Entity Extractor (Cập nhật)
+### 3. Entity Extractor (Cập nhật V2.4)
 
 #### [MODIFY] `app/core/entity_extractor.py`
-Cập nhật `EntityExtractor` để sử dụng 3 lớp extraction:
 
-**Logic mới**:
-1. **Lớp 1**: Fast extraction (spaCy) — Nhanh, miễn phí
-2. **Lớp 2**: LLM Fallback — Chỉ khi số entities < `ENTITY_EXTRACTION_MIN_ENTITIES`
-3. **Merge**: Kết hợp results, ưu tiên fast entities (confidence cao hơn)
-4. **Normalize**: Giữ nguyên logic `_normalize_name` và `deduplicate_entities` cũ
+**Thay đổi chính:**
+1. `extract()` nhận **`chunks: List[str]`** thay vì `text: str`
+2. Thêm `__init__` nhận `config` để toggle method
+3. Thêm `_extract_llm_batch()` — spec chi tiết bên dưới
+4. Thêm `_merge_results()` — pseudocode đầy đủ với schema đúng
 
-**Key changes**:
-- Thêm `FastExtractor.get_instance()` (Singleton)
-- Thêm `_merge_results(fast, llm)` — merge entities + relations
-- Thêm `_llm_extract(text)` — tách logic LLM cũ ra method riêng
-- Giữ nguyên interface: `async def extract(text) -> ExtractionResult`
-
----
-
-### 4. Pipeline Integration
-
-#### [MODIFY] `app/core/pipeline.py`
-- **KHÔNG THAY ĐỔI** logic batching hiện tại
-- Pipeline vẫn gọi `self.extractor.extract(combined_text)` theo batch 5 chunks
-- **Lợi ích**: Pipeline không cần sửa nhiều, chỉ `EntityExtractor` thay đổi bên trong
-
----
-
-### 5. Worker Task
-
-#### [MODIFY] `app/worker/tasks.py`
-- **KHÔNG THAY ĐỔI** logic chính
-- Chỉ thêm logging để tracking extraction method:
 ```python
-logger.info(f"Entity extraction method: {settings.ENTITY_EXTRACTION_METHOD}")
+"""
+Entity Extractor — Hybrid (spaCy + LLM fallback)
+"""
+from typing import List, Optional
+from ..schemas.lightrag import ExtractionResult, ExtractedEntity, EntityRelation
+from ..services.llm_service import llm_service
+from ..constants import (
+    ENTITY_EXTRACTION_BATCH_SIZE,
+    ENTITY_EXTRACTION_MIN_ENTITIES,
+    ENTITY_EXTRACTION_MAX_LLM_BATCHES,
+)
+
+class EntityExtractor:
+    """
+    Hybrid entity extractor:
+    - Fast layer: spaCy (entities only)
+    - Fallback layer: LLM (entities + relations, batch-by-batch)
+    """
+
+    def __init__(self, aliases: dict = None, config=None):
+        self.aliases = aliases or {}
+        self._config = config
+
+        # Lazy-init FastExtractor chỉ khi cần
+        method = getattr(config, "ENTITY_EXTRACTION_METHOD", "llm") if config else "llm"
+        if method in ("hybrid", "spacy_only"):
+            from .fast_extractor import FastExtractor
+            self._fast_extractor = FastExtractor()
+        else:
+            self._fast_extractor = None
+
+    def _normalize_name(self, name: str) -> str:
+        clean_name = name.strip().lower()
+        if clean_name in self.aliases:
+            return self.aliases[clean_name]
+        return name.strip().title()
+
+    # ============================================================
+    # Public API — signature thay đổi: nhận List[str] thay vì str
+    # ============================================================
+
+    async def extract(self, chunks: List[str]) -> Optional[ExtractionResult]:
+        """
+        Extract entities & relations từ danh sách chunks.
+
+        Args:
+            chunks: List of text chunks (đã được chunk từ pipeline)
+
+        Returns:
+            ExtractionResult hoặc None (nếu spacy_only và fail)
+        """
+        method = getattr(self._config, "ENTITY_EXTRACTION_METHOD", "llm") if self._config else "llm"
+
+        if method == "spacy_only":
+            return await self._extract_spacy_only(chunks)
+        elif method == "hybrid":
+            return await self._extract_hybrid(chunks)
+        else:  # "llm" — giữ nguyên logic cũ
+            return await self._extract_llm_legacy(chunks)
+
+    # ============================================================
+    # Legacy LLM mode (giữ backward compat)
+    # ============================================================
+
+    async def _extract_llm_legacy(self, chunks: List[str]) -> Optional[ExtractionResult]:
+        """Logic cũ: gọi LLM cho từng batch, gộp kết quả."""
+        all_entities = []
+        all_relations = []
+        total_batches = max(1, (len(chunks) + ENTITY_EXTRACTION_BATCH_SIZE - 1) // ENTITY_EXTRACTION_BATCH_SIZE)
+
+        for i in range(total_batches):
+            batch = chunks[i * ENTITY_EXTRACTION_BATCH_SIZE : (i + 1) * ENTITY_EXTRACTION_BATCH_SIZE]
+            combined = "\n\n---\n\n".join(batch)
+            result = await self._extract_llm_batch(combined)
+            if result:
+                all_entities.extend(result.entities)
+                all_relations.extend(result.relations)
+
+        if not all_entities and not all_relations:
+            return None
+
+        return ExtractionResult(entities=all_entities, relations=all_relations)
+
+    # ============================================================
+    # spaCy-only mode
+    # ============================================================
+
+    async def _extract_spacy_only(self, chunks: List[str]) -> Optional[ExtractionResult]:
+        full_text = " ".join(chunks)
+        result = self._fast_extractor.extract(full_text)
+        # Normalize names
+        for ent in result.entities:
+            ent.name = self._normalize_name(ent.name)
+        return result
+
+    # ============================================================
+    # Hybrid mode (MỚI — V2.4)
+    # ============================================================
+
+    async def _extract_hybrid(self, chunks: List[str]) -> Optional[ExtractionResult]:
+        """
+        Hybrid extraction:
+        1. Fast extract toàn bộ text bằng spaCy
+        2. Mandatory LLM batch #1 — LUÔN CHẠY để lấy relations
+        3. Fallback loop batch #2+ — chỉ chạy nếu thiếu entities
+        """
+        full_text = " ".join(chunks)
+
+        # Bước 1: Fast extract
+        final_res = self._fast_extractor.extract(full_text)
+        # Normalize spaCy entity names
+        for ent in final_res.entities:
+            ent.name = self._normalize_name(ent.name)
+
+        # Bước 2: Mandatory LLM Batch #1 — luôn chạy để lấy relations
+        first_batch = chunks[:ENTITY_EXTRACTION_BATCH_SIZE]
+        try:
+            llm_res = await self._extract_llm_batch("\n\n---\n\n".join(first_batch))
+            if llm_res:
+                final_res = self._merge_results(final_res, llm_res)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Mandatory LLM batch #1 failed: {e}")
+
+        # Bước 3: Fallback Loop — chỉ chạy nếu thiếu entities
+        total_batches = max(1, (len(chunks) + ENTITY_EXTRACTION_BATCH_SIZE - 1) // ENTITY_EXTRACTION_BATCH_SIZE)
+        for i in range(1, min(total_batches, ENTITY_EXTRACTION_MAX_LLM_BATCHES)):
+            if len(final_res.entities) >= ENTITY_EXTRACTION_MIN_ENTITIES:
+                break  # Early exit: đủ entities
+
+            try:
+                start = i * ENTITY_EXTRACTION_BATCH_SIZE
+                end = start + ENTITY_EXTRACTION_BATCH_SIZE
+                batch = chunks[start:end]
+                llm_res = await self._extract_llm_batch("\n\n---\n\n".join(batch))
+                if llm_res:
+                    final_res = self._merge_results(final_res, llm_res)
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.warning(f"LLM batch #{i+1} failed, skipping: {e}")
+
+        return final_res
+
+    # ============================================================
+    # Internal helpers
+    # ============================================================
+
+    async def _extract_llm_batch(self, text: str) -> Optional[ExtractionResult]:
+        """
+        Gọi LLM để trích xuất entities + relations từ 1 đoạn text.
+        Dùng lại prompt + schema hiện tại của extract().
+
+        Args:
+            text: Combined text của 1 batch
+
+        Returns:
+            ExtractionResult hoặc None nếu LLM fail
+        """
+        prompt = f"""
+        Extract key entities and their relationships from the text below.
+        Focus on important technical concepts, people, and organizations.
+        Output MUST be a JSON object with:
+        - "entities": list of objects with "name", "entity_type", "description", "confidence"
+        - "relations": list of objects with "source", "target", "relation_type", "description"
+
+        Text:
+        {text}
+        """
+        result = await llm_service.structured_extraction(prompt, ExtractionResult)
+
+        if result:
+            # Normalize names
+            for entity in result.entities:
+                entity.name = self._normalize_name(entity.name)
+                # Normalize confidence (0-100 → 0-1)
+                if entity.confidence > 1.0:
+                    entity.confidence = entity.confidence / 100.0
+
+            # Normalize relation source/target names
+            for relation in result.relations:
+                relation.source = self._normalize_name(relation.source)
+                relation.target = self._normalize_name(relation.target)
+
+        return result
+
+    def _merge_results(self, fast: ExtractionResult, llm: ExtractionResult) -> ExtractionResult:
+        """
+        Merge strategy:
+        1. Index fast entities by lowercase name (key=entity.name.lower())
+        2. For each LLM entity:
+           - If name matches fast entity → CONFLICT: Keep LLM type & description
+           - confidence = max(fast, llm)
+           - Mark as "merged"
+           - Else → Add LLM entity as-is (entity mới LLM phát hiện)
+        3. Add fast entities that had NO LLM match
+        4. Merge relations:
+           - Dedup by (source, target, relation_type) — ĐÚNG schema
+        """
+        fast_by_name: dict[str, ExtractedEntity] = {
+            e.name.lower(): e for e in fast.entities
+        }
+
+        merged_entities: List[ExtractedEntity] = []
+        matched_fast_names: set[str] = set()
+
+        # Bước 1: Xử lý LLM entities
+        for llm_ent in llm.entities:
+            key = llm_ent.name.lower()
+            fast_ent = fast_by_name.get(key)
+
+            if fast_ent:
+                # CONFLICT: Ưu tiên LLM cho type/description
+                merged_entities.append(ExtractedEntity(
+                    name=llm_ent.name,
+                    entity_type=llm_ent.entity_type,
+                    description=llm_ent.description,
+                    confidence=max(fast_ent.confidence, llm_ent.confidence)
+                ))
+                matched_fast_names.add(key)
+            else:
+                # LLM-only entity
+                merged_entities.append(llm_ent)
+
+        # Bước 2: Thêm fast entities không có trong LLM
+        for key, fast_ent in fast_by_name.items():
+            if key not in matched_fast_names:
+                merged_entities.append(fast_ent)
+
+        # Bước 3: Merge relations — dedup bằng (source, target, relation_type)
+        merged_relations: List[EntityRelation] = []
+        seen_relations: set[tuple[str, str, str]] = set()
+
+        for rel in fast.relations + llm.relations:
+            rel_key = (rel.source, rel.target, rel.relation_type)
+            if rel_key not in seen_relations:
+                merged_relations.append(rel)
+                seen_relations.add(rel_key)
+
+        return ExtractionResult(
+            entities=merged_entities,
+            relations=merged_relations
+        )
+
+    # ============================================================
+    # Deduplication (giữ nguyên logic cũ)
+    # ============================================================
+
+    def deduplicate_entities(self, entities: List[ExtractedEntity]) -> List[ExtractedEntity]:
+        """
+        Map-Reduce: Merge entities với cùng canonical name.
+        Keep longest description and highest confidence.
+        """
+        from typing import Dict
+        merged: Dict[str, ExtractedEntity] = {}
+        for entity in entities:
+            name = entity.name
+            if name not in merged:
+                merged[name] = entity
+            else:
+                if len(entity.description) > len(merged[name].description):
+                    merged[name].description = entity.description
+                if entity.confidence > merged[name].confidence:
+                    merged[name].confidence = entity.confidence
+
+        return list(merged.values())
 ```
 
 ---
 
-### 6. Dependencies
+### 4. Pipeline Integration (QUAN TRỌNG — V2.4 bổ sung)
+
+#### [MODIFY] `app/core/pipeline.py`
+
+**Thay đổi trong `ingest_text()`** — truyền `raw_chunks` (List[str]) thay vì `combined_text` (str):
+
+```python
+# HIỆN TẠI (cũ):
+for batch_start in range(0, total_chunks, batch_size):
+    batch_chunks = raw_chunks[batch_start:batch_end]
+    combined_text = "\n\n---\n\n".join(batch_chunks)
+    extraction = await self.extractor.extract(combined_text)  # ← str
+
+# MỚI (V2.4):
+# Truyền toàn bộ raw_chunks cho extractor tự quản lý batching
+extraction = await self.extractor.extract(raw_chunks)
+if extraction:
+    all_entities.extend(extraction.entities)
+    all_relations.extend(extraction.relations)
+```
+
+**Full context — đoạn loop entity extraction trong `ingest_text()` sẽ được thay thế:**
+
+```python
+# Trước ( ~20 dòng loop batch ):
+for batch_start in range(0, total_chunks, batch_size):
+    ...
+    extraction = await self.extractor.extract(combined_text)
+    ...
+
+# Sau (V2.4 — gọn hơn nhiều):
+await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING_ENTITIES)
+logger.info(f"Starting entity extraction: {total_chunks} chunks (method={self.extractor._config.ENTITY_EXTRACTION_METHOD if self.extractor._config else 'llm'})")
+
+extraction = await self.extractor.extract(raw_chunks)
+if extraction:
+    all_entities.extend(extraction.entities)
+    all_relations.extend(extraction.relations)
+
+logger.info(f"Entity extraction complete: {len(all_entities)} entities, {len(all_relations)} relations")
+```
+
+**Thay đổi trong `__init__` của `LightRAGPipeline`** — không cần thay đổi gì, vì `EntityExtractor` đã nhận `config` qua constructor. Chỉ cần đảm bảo nơi tạo pipeline inject config đúng:
+
+```python
+# Nơi tạo EntityExtractor (thường là dependency injection hoặc factory):
+from app.config import settings
+extractor = EntityExtractor(aliases=None, config=settings)
+```
+
+---
+
+### 5. Docker và Requirements
 
 #### [MODIFY] `requirements.txt`
-Thêm:
 ```txt
-# Fast NER (spaCy)
 spacy>=3.7.0
 ```
 
-**Cài đặt**:
-```bash
-pip install spacy
-python -m spacy download en_core_web_sm
-```
-
-**Lưu ý**: GLiNER KHÔNG đưa vào requirements.txt chính thức — install riêng nếu cần:
-```bash
-pip install gliner  # Optional, cho technical NER
+#### [MODIFY] `Dockerfile`
+```dockerfile
+# Sau lệnh RUN pip install -r requirements.txt
+RUN pip install spacy && python -m spacy download en_core_web_sm
 ```
 
 ---
 
 ## 📊 SO SÁNH TRƯỚC/SAU
 
-| Metric | Trước (LLM only) | Sau (Hybrid) | Cải thiện |
+| Metric | Trước (LLM only) | Sau (Hybrid V2.4) | Cải thiện |
 |--------|-----------------|--------------|-----------|
-| **Thời gian (1MB PDF)** | 320s | ~5s (fast) + 30s (fallback) = **35s** | **9x nhanh hơn** |
-| **RAM Usage** | ~1.5GB (Ollama) | ~15MB (spaCy) + ~400MB (fallback nếu cần) | **Giảm 60-70%** |
-| **LLM Calls** | 40 calls/document | 0-2 calls/document (fallback) | **Giảm 95%** |
-| **Entities** | ~50-100 (tùy LLM) | ~30-60 (spaCy) + ~20 (LLM fallback) | **Tương đương** |
-| **Relations** | ~20-40 (LLM) | ~10-20 (dependency) + ~10 (LLM) | **Hơi ít hơn, nhưng chính xác hơn** |
-| **Cost** | Cao (LLM API calls) | Thấp (spaCy miễn phí) | **Giảm 90%** |
-
----
-
-## 🧵 RÀNG BUỘC PHẦN CỨNG (8GB RAM)
-
-Với 8GB RAM và chạy CPU-only, chúng ta cần quản lý chặt chẽ "Memory Footprint":
-
-| Component | RAM Usage | Ghi chú |
-|-----------|-----------|---------|
-| **spaCy (en_core_web_sm)** | ~15MB | Gần như không đáng kể |
-| **Ollama (Qwen2.5:1.5B)** | ~400MB | Chỉ load khi fallback |
-| **PostgreSQL + Redis + ChromaDB** | ~1.5GB | Docker containers |
-| **OS + Other apps** | ~4GB | Windows + browser |
-| **TOTAL** | ~6GB | **An toàn cho 8GB RAM** |
-
-**Tối ưu**:
-- Singleton pattern — model chỉ load 1 lần
-- ARQ concurrency = 1 — tránh đột biến RAM
-- LLM fallback chỉ gọi khi cần (giảm 95% calls)
-
----
-
-## ✅ KẾ HOẠCH XÁC MINH
-
-### 1. Unit Tests
-```bash
-# Test FastExtractor
-pytest tests/unit/test_fast_extractor.py -v
-
-# Test EntityExtractor (hybrid)
-pytest tests/unit/test_entity_extractor_hybrid.py -v
-
-# Test integration với pipeline
-pytest tests/integration/test_documents_api.py::test_upload_pdf_with_hybrid_extraction -v
-```
-
-### 2. Benchmark Script
-```python
-import time
-start = time.time()
-result = await extractor.extract(text)
-elapsed = time.time() - start
-
-print(f"Extraction time: {elapsed:.2f}s")
-print(f"Entities: {len(result.entities)}")
-print(f"Relations: {len(result.relations)}")
-print(f"RAM usage: {get_ram_usage_mb()}MB")
-```
-
-### 3. Manual Testing Checklist
-- [ ] Upload PDF technical (ML/AI) → Kiểm tra Knowledge Graph
-- [ ] Upload PDF general (business, history) → Kiểm tra entities cơ bản
-- [ ] So sánh số lượng entities/relations trước/sau
-- [ ] Kiểm tra RAM usage trong quá trình xử lý
-- [ ] Kiểm tra worker logs để xác nhận fallback logic
-
-### 4. Rollback Plan
-- Set `ENTITY_EXTRACTION_METHOD=llm` trong `.env` → Quay lại LLM only
-- Code cũ vẫn giữ nguyên, chỉ thêm logic mới (backward compatible)
-- Không có migration data — documents cũ giữ nguyên entities cũ
+| **Thời gian (1MB PDF)** | 320s (40 batches × 8s) | ~2s (spaCy) + ~8s (batch 1) + ~40s (fallback ~5 batches) = **~50s** | **~6x nhanh hơn** |
+| **RAM Usage** | ~1.2GB (Ollama) | ~50MB (spaCy) + Ollama (chỉ khi fallback) | An toàn hơn |
+| **LLM Calls** | 40 calls/document | 1 (mandatory) + ~5 (fallback) = **~6 calls** | **Giảm ~85%** |
+| **Entities** | ~50-100 / doc | Tương đương hoặc cao hơn | |
+| **Relations** | Có (tất cả batches) | Có (ít nhất từ batch 1) | Đảm bảo chất lượng |
+| **Resilience** | LLM fail = không có gì | spaCy luôn có entities | Tốt hơn |
 
 ---
 
 ## 🗓️ LỘ TRÌNH TRIỂN KHAI
 
-| Bước | Công việc | Thời lượng | Trạng thái |
-|------|----------|-----------|-----------|
-| **1** | Cài spaCy + download `en_core_web_sm` | 5 phút | ⏳ Pending |
-| **2** | Thêm constants + config mới | 5 phút | ⏳ Pending |
-| **3** | Tạo `fast_extractor.py` | 15 phút | ⏳ Pending |
-| **4** | Cập nhật `entity_extractor.py` (hybrid logic) | 15 phút | ⏳ Pending |
-| **5** | Viết unit tests cho FastExtractor | 15 phút | ⏳ Pending |
-| **6** | Chạy test + benchmark | 10 phút | ⏳ Pending |
-| **7** | Test với PDF thật | 10 phút | ⏳ Pending |
-| **Tổng** | | **~75 phút** | |
+| Bước | Công việc | File(s) | Thời lượng |
+|------|----------|---------|-----------|
+| **1** | Thêm `spacy` vào requirements.txt & pre-download trong Dockerfile | `requirements.txt`, `Dockerfile` | 10p |
+| **2** | Thêm constants + config (`MIN_ENTITIES`, `MAX_LLM_BATCHES`, `METHOD`) | `constants.py`, `config.py`, `.env.example` | 5p |
+| **3** | Tạo `fast_extractor.py` (Thread-safe Singleton, Type Mapping) | `fast_extractor.py` | 15p |
+| **4** | Sửa `entity_extractor.py` — implement hybrid logic + merge + LLM batch | `entity_extractor.py` | 30p |
+| **5** | Sửa `pipeline.py` — truyền `raw_chunks` thay vì loop batch | `pipeline.py` | 10p |
+| **6** | Viết unit tests: merge logic, fallback loop, error handling, config switching | `test_fast_extractor.py`, `test_entity_extractor_hybrid.py` | 25p |
+| **Tổng** | | | **~95 phút** |
+
+---
+
+## ✅ KẾ HOẠCH XÁC MINH
+
+### Unit Tests (Mới)
+```bash
+pytest tests/unit/test_fast_extractor.py -v          # Thread-safety, type mapping, extraction
+pytest tests/unit/test_entity_extractor_hybrid.py -v  # Merge logic, fallback loop, error handling
+```
+
+### Manual Testing Checklist
+- [ ] Ingest tài liệu technical ngắn (~5 chunks) → verify luôn có relations từ batch 1
+- [ ] Ingest tài liệu dài (~40 chunks) → verify LLM calls ≤ 10 (max batches)
+- [ ] Test `ENTITY_EXTRACTION_METHOD=llm` → pipeline hoạt động như cũ (backward compat)
+- [ ] Test `ENTITY_EXTRACTION_METHOD=spacy_only` → không gọi LLM, chỉ spaCy
+- [ ] Test `ENTITY_EXTRACTION_METHOD=hybrid` → fallback trigger khi <30 entities, early exit khi đủ
+- [ ] Test LLM failure: mock LLM raise exception → vẫn có spaCy entities, relations = rỗng
+- [ ] `docker stats` → RAM toàn container duy trì dưới 1.5GB
+- [ ] Thử xoá spaCy model → verify fail-fast với RuntimeError rõ ràng
 
 ---
 
@@ -340,33 +579,33 @@ print(f"RAM usage: {get_ram_usage_mb()}MB")
 
 | Rủi ro | Khả năng | Impact | Giảm thiểu |
 |--------|---------|--------|-----------|
-| spaCy không nhận diện technical terms | Cao | Trung bình | Dùng LLM fallback |
-| Dependency parsing cho relations kém chính xác | Trung bình | Thấp | Giữ LLM làm fallback |
-| RAM tăng do load nhiều models | Thấp | Cao | Singleton pattern, giới hạn concurrency |
-| Breaking changes | Thấp | Cao | Backward compatible, có rollback plan |
+| **spaCy model missing** | Thấp | Cao | Fail-fast với RuntimeError + log rõ ràng |
+| **LLM batch fail liên tiếp** | Trung bình | Trung bình | try/except từng batch, vẫn có spaCy entities |
+| **Relations ít/không có** | Trung bình | Thấp | Mandatory batch #1 đảm bảo luôn có ít nhất 1 batch relations |
+| **OOM trên worker** | Thấp | Thấp | spaCy ~50MB, singleton shared, hoàn toàn kiểm soát được |
+| **Type mismatch spaCy→hệ thống** | Đã fix | — | `SPACY_TO_STANDARD_TYPES` mapping đầy đủ |
 
 ---
 
 ## 📌 KẾT LUẬN
 
-**Đánh giá**: Kế hoạch V2.0 **HOÀN THIỆN** và **SẴN SÀNG TRIỂN KHAI**
+**Đánh giá V2.4**: ✅ **SẴN SÀNG TRIỂN KHAI**
 
-✅ Đã bổ sung:
-- Chi tiết tích hợp vào code hiện tại (pipeline, worker, tasks)
-- Relations extraction strategy (dependency parsing + LLM fallback)
-- Testing strategy đầy đủ (unit + benchmark + manual)
-- Migration path (config toggle)
-- Rollback plan
-- Benchmark metrics cụ thể
-- Ràng buộc phần cứng (8GB RAM)
+Kế hoạch đã hoàn thiện ở mức **95%+, giải quyết triệt để**:
+- ✅ Thread-safe Singleton với `threading.Lock()`
+- ✅ Type mapping spaCy → hệ thống (`SPACY_TO_STANDARD_TYPES`)
+- ✅ Merge algorithm chi tiết với `rel.source`/`rel.target` (đúng schema)
+- ✅ Fallback loop với `ENTITY_EXTRACTION_BATCH_SIZE` constant (không hardcode)
+- ✅ Error handling: try/except từng batch, không crash toàn bộ
+- ✅ Relations safety: mandatory batch #1 luôn chạy
+- ✅ Pipeline integration rõ ràng: truyền `List[str]` thay vì `str`
+- ✅ Backward compatibility: 3 modes (`llm`, `hybrid`, `spacy_only`)
+- ✅ Config placement đúng: constants trong `constants.py`, method toggle trong `config.py`
+- ✅ Model name đúng: `hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M`
 
-⚠️ Cần lưu ý:
-- Test kỹ trên PDF technical trước khi áp dụng production
-- Giữ LLM fallback để đảm bảo chất lượng
-- Monitor RAM usage sau khi deploy
-- GLiNER là optional — install riêng nếu cần technical NER
+**Còn ~5% rủi ro chấp nhận được:**
+- spaCy không trích xuất relations — phó thác cho LLM mandatory batch (đã giảm thiểu)
+- Threshold `30` có thể cần tune lại sau khi test với documents thật
+- Entity types từ spaCy có thể ít chi tiết hơn LLM (đã giải quyết bằng merge strategy ưu tiên LLM)
 
----
-
-> [!NOTE]
-> **Sẵn sàng implement**. Nếu bạn đồng ý, tôi sẽ bắt đầu từ Bước 1 (cài spaCy) và đi từng bước theo lộ trình.
+**Next Step:** Tiến hành Implementation Phase — Bắt đầu với Step 1 (requirements + Dockerfile).

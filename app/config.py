@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # Model Selection
     DEFAULT_LLM_MODEL: str = "hf.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF:Q4_K_M"
     
+    # Entity Extraction
+    ENTITY_EXTRACTION_METHOD: str = "hybrid"  # llm | hybrid | spacy_only
+
+    
     # Embedding Configuration
     EMBEDDING_PROVIDER: str = "openai"  # "openai" | "ollama"
     DEFAULT_EMBEDDING_MODEL: str = "text-embedding-3-small"  # OpenAI model

@@ -43,6 +43,9 @@ EMBEDDING_BATCH_SIZE = 100   # Max texts per batch request
 # Entity Extraction
 ENTITY_CONFIDENCE_DEFAULT = 0.5
 ENTITY_EXTRACTION_BATCH_SIZE = 5  # Number of chunks to process together in 1 LLM call
+ENTITY_EXTRACTION_MIN_ENTITIES = 30       # Ngưỡng dừng fallback LLM
+ENTITY_EXTRACTION_MAX_LLM_BATCHES = 10    # Giới hạn LLM calls tối đa
+
 
 # Pagination
 DEFAULT_PAGE_SIZE = 100
