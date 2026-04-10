@@ -115,9 +115,9 @@ interface GetDocumentStatusResponse {
   data: {
     document_id: string;
     status: 'pending' | 'processing' | 'chunking' | 'entity_extraction' |
-            'graph_construction' | 'embedding_generation' | 'completed' | 'failed';
+            'graph_construction' | 'embedding_generation' | 'vector_storage' | 'completed' | 'failed';
     progress?: number;           // 0-100, chỉ có khi status != pending/completed/failed
-    current_step?: string;       // Mô tả bước hiện tại
+    current_step?: string;       // Mô tả bước hiện tại (1-8)
     error_message?: string;      // Chỉ có khi status = 'failed'
     stats?: {                    // Chỉ có khi status = 'completed'
       total_chunks: number;
@@ -506,7 +506,8 @@ interface SocraticChatResponse {
     message_id: string;
     response: string;             // AI response text
     agent_mode: string;           // 'socratic' | 'general'
-    attempt_count?: number;       // Số lần user đã thử (cho Socratic)
+    attempt_count: number;        // Số lần user đã thử cho concept hiện tại
+    current_concept?: string;     // Khái niệm đang được thảo luận
     context_entities?: string[];  // Entities dùng trong context
     token_count?: number;         // Token usage
   };
@@ -585,6 +586,7 @@ interface CreateChatSessionResponse {
     session_id: string;
     agent_type: string;
     context_document_id?: string;
+    attempt_count: number;        // Khởi tạo = 0
     created_at: string;
   };
 }
@@ -1354,10 +1356,15 @@ graph TB
 }
 ```
 
----
+## API Security & Identity
+
+MỌI API request (trừ health check công khai) PHẢI bao gồm:
+- **Header:** `Authorization: Bearer <token>`
+- **Identity:** `user_id` được trích xuất từ token qua middleware. 
+- **MVP Note:** Trong giai đoạn MVP, token có thể là một chuỗi giả lập, nhưng middleware PHẢI inject `DEFAULT_USER_ID` vào request context để đảm bảo tuân thủ `BR-001`.
 
 > [!IMPORTANT]
-> **Module contracts là HỢP ĐỒU (contract) giữa các module.**
+> **Module contracts là HỢP ĐỒNG (contract) giữa các module.**
 > Vi phạm contract = break các module phụ thuộc.
 > Mọi thay đổi contract PHẢI được review và versioned.
 

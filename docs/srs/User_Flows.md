@@ -44,10 +44,11 @@ Mỗi User Flow được đánh ID: **`UF-XXX`** (User Flow #XXX).
 | 6 | Background worker nhận task | Update status: `processing` | Redis Queue → Worker |
 | 7 | Worker trích xuất text | Lưu raw text vào `document_chunks` | PDF → Text → PostgreSQL |
 | 8 | Worker gọi spaCy + LLM extract entities | Lưu entities + relations | Chunks → spaCy → LLM (fallback) → PostgreSQL |
-| 9 | Worker xây dựng NetworkX graph | Lưu graph (local/S3) | Entities → NetworkX |
+| 9 | Worker xây dựng NetworkX graph | Lưu graph vào SQL (Source of Truth) | Entities → SQL (nodes/edges) |
 | 10 | Worker tạo embeddings | Lưu vào ChromaDB | Chunks → Embedding → ChromaDB |
-| 11 | Worker update status: `completed` | Document sẵn sàng | PostgreSQL: `status = completed` |
-| 12 | Frontend polling thấy status thay đổi | Hiển thị "✅ Completed" + stats | `GET /api/v1/documents/{id}/status` |
+| 11 | Worker lưu vào Vector Storage | Kiểm tra tính toàn vẹn storage | ChromaDB → Verified |
+| 12 | Worker update status: `completed` | Document sẵn sàng | PostgreSQL: `status = completed` |
+| 13 | Frontend polling thấy status thay đổi | Hiển thị "✅ Completed" + stats | `GET /api/v1/documents/{id}/status` |
 
 ### Alternative Flows
 
@@ -55,7 +56,7 @@ Mỗi User Flow được đánh ID: **`UF-XXX`** (User Flow #XXX).
 |---|---|---|
 | **A1: File > 50MB** | Step 2 fail | Trả về `400 Bad Request`: "File vượt giới hạn 50MB" |
 | **A2: Không có text layer** | Step 7 fail (scan PDF) | Status: `failed`, error: "Không đọc được text" |
-| **A3: LLM timeout** | Step 8 timeout | Fallback loop retry (max 10 batches). Nếu tất cả fail → vẫn có spaCy entities, graph xây được (không có relations) |
+| **A3: LLM timeout** | Step 8 timeout | Fallback loop retry (max 3 retries per batch). Nếu tất cả fail → vẫn có spaCy entities, graph xây được (không có relations) |
 | **A4: Worker crash** | Any step | Worker restart, retry từ bước gần nhất |
 | **A5: Không có entities** | Step 8 — spaCy + LLM đều fail | Status: `failed`, error: "No entities extracted" |
 
@@ -64,9 +65,9 @@ Mỗi User Flow được đánh ID: **`UF-XXX`** (User Flow #XXX).
 - **Failure:** Document status = `failed`, user thấy error message
 
 ### Business Rules áp dụng
-- [BR-002](Business_Rules.md#br-002-document-processing-pipeline) 🔴 — 7 bước bắt buộc
+- [BR-002](Business_Rules.md#br-002-document-processing-pipeline) 🔴 — 8 bước bắt buộc
 - [BR-003](Business_Rules.md#br-003-graph-construction-requires-entities) 🔴 — Cần ít nhất 1 entity
-- [BR-010](Business_Rules.md#br-010-error-recovery-rule) 🔴 — Retry fallback loop
+- [BR-010](Business_Rules.md#br-010-error-recovery-rule) 🔴 — Retry fallback loop (3 retries)
 - [BR-011](Business_Rules.md#br-011-document-upload-validation) 🟡 — Validation
 
 ### Mermaid Diagram
@@ -105,24 +106,29 @@ sequenceDiagram
             API-->>FE: Notification
             FE->>U: Show error: "No text layer"
         else Text extracted
+            W->>PG: UPDATE status = chunking
             W->>PG: INSERT document_chunks
 
+            W->>PG: UPDATE status = entity_extraction
             W->>W: Fast extract (spaCy) — entities
             W->>LLM: Mandatory batch #1 — entities + relations
             alt LLM timeout/error
-                W->>W: Fallback loop (max 10 batches, early exit if ≥30 entities)
+                W->>W: Fallback loop (max 3 retries, early exit if ≥30 entities)
                 alt All LLM retries fail
                     W->>W: Continue with spaCy entities only
-                    W->>NX: Build knowledge graph (entities, no relations)
                 end
-            else LLM success
-                W->>W: Merge spaCy + LLM results
-                W->>NX: Build knowledge graph
-                W->>PG: INSERT graph_entities, graph_relations
             end
+            
+            W->>PG: UPDATE status = graph_construction
+            W->>W: Merge spaCy + LLM results
+            W->>NX: Build knowledge graph
+            W->>PG: INSERT graph_entities, graph_relations (Source of Truth)
 
+            W->>PG: UPDATE status = embedding_generation
             W->>LLM: Generate embeddings
             LLM-->>W: Vector embeddings
+            
+            W->>PG: UPDATE status = vector_storage
             W->>CD: Store embeddings (with user_id filter)
 
             W->>PG: UPDATE status = completed
@@ -147,7 +153,7 @@ sequenceDiagram
 
 | Step | Action | System Response | Data Flow |
 |---|---|---|---|
-| 1 | User mở Chat界面 | Load chat history | `GET /api/v1/chat/sessions` |
+| 1 | User mở giao diện Chat | Load chat history | `GET /api/v1/chat/sessions` |
 | 2 | User chọn document context | System load graph stats cho document đó | `GET /api/v1/graph/stats` |
 | 3 | User nhập câu hỏi | — | — |
 | 4 | User nhấn Enter | Frontend gửi message | `POST /api/v1/chat/socratic` |

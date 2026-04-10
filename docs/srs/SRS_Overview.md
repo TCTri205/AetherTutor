@@ -29,7 +29,7 @@ Trước khi yêu cầu AI code cho Module X:
 | Tài liệu SRS | Tài liệu hiện có trong docs/ | Quan hệ |
 |---|---|---|
 | `SRS_Overview.md` (file này) | `core/Architecture.md`, `core/Features.md` | Tổng hợp + bổ sung Business Rules |
-| `Business_Rules.md` | **KHÔNG CÓ** — hoàn toàn mới | Định nghĩa luật chơi bất biến |
+| `Business_Rules.md` | `core/Data_Model.md` | Định nghĩa 15 luật chơi bất biến (logic chi tiết) |
 | `User_Flows.md` | `design/User_Scenarios.md` | Chi tiết hóa thành flowchart/data flow |
 | `Module_Contracts.md` | `core/API_Specifications.md` | Mở rộng sang internal service contracts |
 
@@ -62,12 +62,16 @@ Trước khi yêu cầu AI code cho Module X:
 | Quiz Generation | ✅ Trong scope | Multi-hop questions từ graph |
 | Note Taking (Zettelkasten) | ✅ Trong scope | Atomic notes + backlinks |
 | Knowledge Graph View | ✅ Trong scope | React Flow visualization |
-| Authentication / JWT | ❌ Post-MVP | MVP: single-user local |
-| Multi-user / Multi-tenancy | ❌ Post-MVP | MVP: single-user |
+| Authentication / JWT | ❌ Post-MVP | MVP: single-user local (Mock Auth) |
+| Multi-user / Multi-tenancy | ❌ Post-MVP | MVP: single-user (Default User ID) |
 | OAuth / Social Login | ❌ Post-MVP | Post-MVP Phase |
 | Payment / Subscription | ❌ Post-MVP | Post-MVP Phase |
 | Video/Audio Processing | ❌ Post-MVP | Post-MVP Phase |
 | Mobile App | ❌ Post-MVP | Responsive web only (MVP) |
+
+> [!NOTE]
+> **MVP Mock Auth:** Giai đoạn MVP sử dụng một `DEFAULT_USER_ID` cố định (`00000000-0000-0000-0000-000000000000`) để thỏa mãn các luật về cô lập dữ liệu (BR-001). Cơ chế này được thực thi qua Authorization Middleware giả lập, đảm bảo mọi truy vấn database/vector/graph PHẢI luôn đi kèm ID này.
+
 
 ---
 
@@ -150,7 +154,7 @@ graph TB
 | Database | PostgreSQL + asyncpg | PostgreSQL 16 |
 | Vector DB | ChromaDB (HTTP mode) | ChromaDB 0.5.0 |
 | Cache/Queue | Redis + ARQ | Redis 7 |
-| Graph | NetworkX (in-memory) | Latest |
+| Graph Storage | PostgreSQL + NetworkX | **PostgreSQL** là source-of-truth. **NetworkX** là in-memory view (được rebuild từ SQL khi cần). |
 | LLM | OpenAI API / Ollama | Configurable |
 | ORM | SQLAlchemy 2.0 (async) | 2.0+ |
 | Migration | Alembic | Latest |
@@ -164,22 +168,21 @@ graph TB
 > Đây là danh sách rút gọn. Chi tiết đầy đủ tại **`Business_Rules.md`**.
 
 ### BR-001: User Data Isolation (BẤT BIẾN)
-**MỌI dữ liệu phải được隔离 (isolate) theo `user_id`. Dữ liệu User A KHÔNG BAO GIỜ hiển thị cho User B.**
+**MỌI dữ liệu phải được cô lập (isolate) theo `user_id`. Dữ liệu User A KHÔNG BAO GIỜ hiển thị cho User B.**
 
 ### BR-002: Document Processing Pipeline (BẤT BIẾN)
-**Document PHẢI trải qua đủ 7 bước tuần tự theo State Machine.** Bỏ bước = FAIL.
-
-**7 bước BẮT BUỘC (khớp Data_Model State Machine):**
+**8 trạng thái BẮT BUỘC (khớp Data_Model State Machine):**
 
 | Bước | State | Input | Output |
 |---|---|---|---|
 | 1 | `pending` | File PDF/URL upload | Document record created |
 | 2 | `processing` | Worker picks up task | Status update |
 | 3 | `chunking` | Raw text extracted | Chunks (500 chars, 50 overlap) |
-| 4 | `entity_extraction` | Chunks | JSON entities + relations từ spaCy + LLM (hybrid) |
+| 4 | `entity_extraction` | Chunks | JSON entities + relations |
 | 5 | `graph_construction` | Entities + Relations | NetworkX graph built |
-| 6 | `embedding_generation` | Chunks | Vector embeddings từ LLM |
-| 7 | `completed` | All storage success | Document ready (PostgreSQL + ChromaDB + Graph) |
+| 6 | `embedding_generation` | Chunks | Vector embeddings |
+| 7 | `vector_storage` | Embeddings generated | Saved to ChromaDB |
+| 8 | `completed` | All storage success | Document ready |
 
 **Failure Path:** Bất kỳ bước nào fail → `failed` state với error_message.
 

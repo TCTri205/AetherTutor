@@ -66,31 +66,30 @@ async def test_user_isolation():
 
 ## BR-002: Document Processing Pipeline 🔴
 
-**Mô tả:** Document PHẢI trải qua đúng 7 bước tuần tự theo State Machine. Không được bỏ qua bước nào.
-
-**7 bước BẮT BUỘC (khớp Data_Model State Machine):**
+**8 trạng thái BẮT BUỘC (khớp Data_Model State Machine):**
 ```
-Upload → pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → completed
-  (1)      (2)         (3)         (4)           (5)                 (6)                    (7)                  (8)
+pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → vector_storage → completed
+  (1)         (2)         (3)            (4)                 (5)                    (6)                  (7)             (8)
 ```
 
 **Chi tiết từng bước:**
 
 | Bước | State | Tên | Input | Output | Điều kiện thành công |
 |---|---|---|---|---|---|
-| 1 | `pending` | Upload | File PDF/URL | Document record (status: pending) | File hợp lệ, size < 50MB |
+| 1 | `pending` | Initial State | File upload | Document record (status: pending) | File hợp lệ, size < 50MB |
 | 2 | `processing` | Start Processing | Document pending | Worker picks up task | Worker available |
-| 3 | `chunking` | Extract & Chunk | Raw text | Chunks (500 chars, 50 overlap) | Ít nhất 100 chars extracted, ≥1 chunk |
-| 4 | `entity_extraction` | Entity/Relation Extraction | Chunks | Entities + Relations từ spaCy + LLM (hybrid) | Có ít nhất 1 entity (spaCy hoặc LLM) |
-| 5 | `graph_construction` | Graph Construction | Entities + Relations | NetworkX graph | Graph có nodes và edges |
-| 6 | `embedding_generation` | Embedding Generation | Chunks | Vector embeddings | Tất cả chunks được embed |
-| 7 | `completed` | All Storage Success | Embeddings + Graph | Document ready (PostgreSQL + ChromaDB + Graph) | Cả 3 storage layers thành công |
+| 3 | `chunking` | Extract & Chunk | Raw text | Chunks (500 chars, 50 overlap) | Ít nhất 100 chars extracted |
+| 4 | `entity_extraction` | Entity Extraction | Chunks | Entities + Relations | Có ít nhất 1 entity |
+| 5 | `graph_construction` | Graph Building | Entities + Relations | NetworkX graph | Graph có nodes và edges |
+| 6 | `embedding_generation` | Embedding Gen | Chunks | Vector embeddings | Chunks được embed |
+| 7 | `vector_storage` | Store Vector | Embeddings | Saved to ChromaDB | ChromaDB success |
+| 8 | `completed` | Final State | All storage success | Document ready | Cả 3 storage layers thành công |
 
 **State Machine (khớp Data_Model.md Section 4):**
 ```
-pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → completed
-                ↓            ↓              ↓                    ↓                       ↓
-              failed       failed         failed               failed                 failed
+pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → vector_storage → completed
+                ↓            ↓              ↓                    ↓                       ↓                   ↓
+              failed       failed         failed               failed                 failed              failed
 
 partial_failure → retry (max 3) → embedding_generation
                                 → failed (retry exhausted)
@@ -115,9 +114,10 @@ THEN:
 | `chunking` | `entity_extraction` | Chunking complete | At least 1 chunk created |
 | `entity_extraction` | `graph_construction` | Entities extracted | Min 1 entity (spaCy or LLM) |
 | `graph_construction` | `embedding_generation` | Graph saved | NetworkX graph has nodes |
-| `embedding_generation` | `completed` | All storage success | PostgreSQL + ChromaDB + Graph |
+| `embedding_generation` | `vector_storage` | Embeddings generated | All chunks embedded |
+| `vector_storage` | `completed` | Storage success | PostgreSQL + ChromaDB + Graph synced |
 | Any state | `failed` | Error with no retry | Timeout, invalid data, API error |
-| `partial_failure` | `retry` | Some embeddings failed | Retry count < 3 |
+| `partial_failure` | `retry` | Some embeddings/storage failed | Retry count < 3 |
 
 **Violation Impact:** 🔴 **Data corruption** — Graph không đầy đủ, RAG query sai
 
@@ -277,6 +277,10 @@ FORMAT PHẢN HỒI:
 - Gợi ý nhỏ (nếu user đã thử 1 lần)
 - Giải thích Feynman (nếu user đã thử >= 2 lần)
 - Follow-up question (luôn có)
+
+**Tracking Rule:**
+- `attempt_count` được lưu trong chat session metadata.
+- `attempt_count` reset về 0 mỗi khi người dùng chuyển sang khái niệm (concept) mới hoặc bắt đầu một task học tập mới.
 ```
 
 **Violation Impact:** 🔴 **Mất phương pháp Socratic** — AI trở thành chatbot thường
@@ -370,7 +374,7 @@ THEN:
 
 ## BR-010: Error Recovery Rule 🔴
 
-**Mô tả:** Background task thất bại PHẢI retry 3 lần với exponential backoff.
+**Mô tả:** Background task thất bại PHẢI retry 3 lần với exponential backoff. Áp dụng cho cả các tiến trình LLM batch.
 
 **Logic:**
 ```
@@ -513,7 +517,7 @@ THEN:
 Trước khi merge code, check list sau:
 
 - [ ] **BR-001:** Mọi query có `WHERE user_id = :current_user_id`?
-- [ ] **BR-002:** Document pipeline đủ 7 bước?
+- [ ] **BR-002:** Document pipeline đủ 8 bước?
 - [ ] **BR-003:** Có ít nhất 1 entity trước khi build graph?
 - [ ] **BR-004:** Flashcard chỉ sinh từ completed documents?
 - [ ] **BR-005:** SM-2 algorithm đúng công thức?

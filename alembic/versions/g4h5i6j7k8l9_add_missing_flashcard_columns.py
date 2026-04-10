@@ -40,10 +40,10 @@ def upgrade() -> None:
     )
 
     # ===== Flashcards: Add missing user_source index =====
-    op.create_index(
-        'idx_flashcards_user_source',
-        'flashcards',
-        ['user_id', 'source']
+    # Use IF NOT EXISTS to avoid errors if index was already created
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flashcards_user_source "
+        "ON flashcards (user_id, source)"
     )
 
     # ===== Study Sessions: Add idempotency_key =====

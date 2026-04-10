@@ -35,6 +35,15 @@ Tài liệu này định nghĩa chi tiết các API endpoints cốt lõi cho gia
 | Endpoint | Method | Mô tả |
 | :--- | :--- | :--- |
 | `/api/v1/chat/socratic` | POST | Gửi tin nhắn đến Socratic Tutor Agent (Feynman Method) với **graph-aware context**. |
+| `/api/v1/flashcards/generate` | POST | Tự động tạo flashcard từ **graph entities** với SM-2 scheduling. |
+| `/api/v1/flashcards/due` | GET | Lấy danh sách flashcard cần ôn tập (SM-2). |
+| `/api/v1/flashcards/{id}/review` | POST | Cập nhật kết quả ôn tập flashcard (SM-2 algorithm). |
+| `/api/v1/quiz/generate` | POST | Tự động tạo câu hỏi kiểm tra từ **graph entities & relations**. |
+| `/api/v1/quiz/{quiz_id}/submit` | POST | Nộp bài quiz và chấm điểm. |
+| `/api/v1/notes` | POST | Tạo ghi chú dạng thẻ (Atomic note) mới với **backlink suggestion**. |
+| `/api/v1/notes/{id}` | GET | Lấy ghi chú với backlinks và linked entities. |
+| `/api/v1/dashboard` | GET | Lấy overview stats cho Dashboard (stats, due cards, recent docs, graph preview). |
+| `/api/v1/settings/model` | POST | Thay đổi LLM mode (Local ↔ Cloud) và model configuration. |
 
 ---
 
@@ -43,20 +52,29 @@ Tài liệu này định nghĩa chi tiết các API endpoints cốt lõi cho gia
 > [!WARNING]
 > Các endpoint dưới đây **không thuộc MVP scope**. Tham khảo [MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope](../plans/MVP_Implementation_Plan.md#2-phạm-vi-mvp-mvp-scope) để biết chi tiết.
 
-### Post-MVP: Visualization & Quiz
+### Post-MVP: Authentication & Multi-Tenancy
+
+| Endpoint | Method | Mô tả |
+| :--- | :--- | :--- |
+| `/api/v1/auth/register` | POST | Đăng ký tài khoản mới. |
+| `/api/v1/auth/login` | POST | Đăng nhập (JWT). |
+| `/api/v1/auth/refresh` | POST | Refresh access token. |
+| `/api/v1/users/me` | GET | Lấy thông tin user hiện tại. |
+
+### Post-MVP: Media Pipeline
+
+| Endpoint | Method | Mô tả |
+| :--- | :--- | :--- |
+| `/api/v1/documents/process/youtube` | POST | Xử lý video YouTube thành micro-learning. |
+| `/api/v1/documents/process/audio` | POST | Xử lý audio file thành text + notes. |
+
+### Post-MVP: Advanced Features
 
 | Endpoint | Method | Mô tả |
 | :--- | :--- | :--- |
 | `/api/v1/visualize/graph` | POST | Yêu cầu sinh mã Mermaid từ **LightRAG knowledge graph**. |
-| `/api/v1/quiz/generate` | POST | Tự động tạo câu hỏi kiểm tra từ **graph entities & relations**. |
-
-### Post-MVP: Knowledge Management
-
-| Endpoint | Method | Mô tả |
-| :--- | :--- | :--- |
-| `/api/v1/notes/zettel` | POST | Tạo ghi chú dạng thẻ (Atomic note) mới. |
-| `/api/v1/notes/backlinks` | GET | Lấy danh sách các liên kết gợi ý cho một ghi chú. |
-| `/api/v1/recall/schedule` | GET | Lấy danh sách các Flashcard cần ôn tập trong ngày (SM-2). |
+| `/api/v1/payments/subscribe` | POST | Đăng ký subscription tier. |
+| `/api/v1/analytics/usage` | GET | Lấy thống kê API usage và quota. |
 
 ---
 
@@ -243,3 +261,94 @@ Authorization: Bearer <token>
 > [!NOTE]
 > Các endpoint này được thiết kế để tối ưu hóa việc chia sẻ ngữ cảnh thông qua MCP, giảm thiểu lượng dữ liệu cần truyền tải giữa các lần gọi AI.
 > **LightRAG endpoints** cho phép truy xuất ngữ cảnh giàu ngữ nghĩa hơn traditional RAG.
+
+---
+
+## 4. Dashboard & Settings Endpoints (MVP)
+
+### 4.1 Get Dashboard Data
+
+```http
+GET /api/v1/dashboard
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "stats": {
+      "total_documents": 12,
+      "total_notes": 23,
+      "total_flashcards": 150,
+      "due_flashcards_count": 5,
+      "total_quiz_avg": 85.0,
+      "streak_days": 7
+    },
+    "recent_documents": [
+      {
+        "id": "doc_abc123",
+        "title": "Neural Networks.pdf",
+        "status": "completed",
+        "last_activity": "2026-04-10T08:00:00Z"
+      }
+    ],
+    "recent_sessions": [
+      {
+        "id": "sess_xyz789",
+        "type": "chat",
+        "last_activity": "2026-04-10T09:30:00Z"
+      }
+    ],
+    "graph_preview": {
+      "total_entities": 450,
+      "total_relations": 890,
+      "top_entities": [
+        {"name": "Backpropagation", "degree": 12},
+        {"name": "Gradient Descent", "degree": 8}
+      ]
+    }
+  }
+}
+```
+
+### 4.2 Update Model Settings (Local/Cloud Switch)
+
+```http
+POST /api/v1/settings/model
+Content-Type: application/json
+```
+
+**Request Body:**
+```json
+{
+  "mode": "local",
+  "model": "llama3",
+  "embedding_provider": "ollama"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "mode": "local",
+    "model": "llama3",
+    "embedding_provider": "ollama",
+    "ollama_status": "connected",
+    "available_models": ["llama3", "mistral", "qwen2.5"]
+  }
+}
+```
+
+**Error Response (400 Bad Request) — Ollama offline:**
+```json
+{
+  "success": false,
+  "error": {
+    "code": "LLM_UNAVAILABLE",
+    "message": "Ollama không phản hồi. Cài đặt: ollama.ai + ollama pull llama3"
+  }
+}
+```

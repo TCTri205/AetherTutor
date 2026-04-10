@@ -1,11 +1,14 @@
 """add_queued_failed_processing_step_values
 
 Revision ID: b3c4d5e6f7a8
-Revises: a2b3c4d5e6f7
+Revises: a2b3c4d5e6f7, g4h5i6j7k8l9
 Create Date: 2026-04-10
 
 Adds missing QUEUED and FAILED values to the processingstep enum.
 Also fixes entity_aliases.confidence server_default from 0.0 to 1.0.
+
+Merge migration: combines the branch that adds flashcard columns (g4h5i6j7k8l9)
+with the main line of development.
 """
 from typing import Sequence, Union
 
@@ -15,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'b3c4d5e6f7a8'
-down_revision: Union[str, Sequence[str], None] = 'a2b3c4d5e6f7'
+down_revision: Union[str, Sequence[str], None] = ('a2b3c4d5e6f7', 'g4h5i6j7k8l9')
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

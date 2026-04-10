@@ -22,9 +22,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column(
-        'documents',
-        sa.Column('file_path', sa.String(512), nullable=True)
+    # Use IF NOT EXISTS to avoid errors if column was already added
+    op.execute(
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_path VARCHAR(512)"
     )
 
 

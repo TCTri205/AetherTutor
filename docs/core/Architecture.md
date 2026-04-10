@@ -127,24 +127,25 @@ sequenceDiagram
     W->>PG: Update status: processing
     
     W->>W: Extract text from PDF
-    W->>PG: Save extracted text
+    W->>PG: Update status: chunking
     
     W->>W: Chunk text (500 chars, 50 overlap)
-    W->>PG: Save document_chunks
+    W->>PG: Save chunks & Update status: entity_extraction
     
     loop For each chunk
         W->>LLM: Extract entities & relations
         LLM-->>W: JSON with entities/relations
-        W->>W: Entity resolution<br/>(canonical name mapping)
-        W->>NX: Add nodes & edges to graph
+        W->>W: Entity resolution
+        W->>NX: Add to memory graph
     end
     
-    W->>PG: Save graph_entities & graph_relations
+    W->>PG: Save graph to SQL & Update status: graph_construction
+    W->>PG: Update status: embedding_generation
     
-    W->>LLM: Generate embeddings for chunks
+    W->>LLM: Generate embeddings
     LLM-->>W: Vector embeddings
-    W->>CD: Store embeddings with metadata
-    Note over CD: Filter by user_id for isolation
+    W->>PG: Update status: vector_storage
+    W->>CD: Store embeddings (metadata user_id)
     
     W->>PG: Update status: completed
     W-->>API: Processing complete
@@ -222,13 +223,13 @@ graph LR
 
 ### 6.2 Worker Configuration
 
-| Worker Type | Task | Priority | Timeout | Retry Policy |
+| Worker Type | Task | Priority | Timeout | Retry Policy (BR-010) |
 |---|---|---|---|---|
-| Document Processing | PDF text extraction | High | 2 min | 2 retries, 30s backoff |
+| Document Processing | PDF text extraction | High | 2 min | 3 retries, exponential backoff |
 | Entity Extraction | LLM entity & relation extraction | High | 5 min | 3 retries, exponential backoff |
-| Embedding Generation | ChromaDB vector storage | Medium | 10 min | 2 retries, 60s backoff |
-| Graph Construction | NetworkX graph building | Medium | 3 min | 1 retry |
-| Notification | Email/push notifications | Low | 30s | 3 retries |
+| Embedding Generation | ChromaDB vector storage | Medium | 10 min | 3 retries, exponential backoff |
+| Graph Construction | NetworkX graph building | Medium | 3 min | 3 retries, exponential backoff |
+| Notification | Email/push notifications | Low | 30s | 3 retries, exponential backoff |
 
 ### 6.3 Task State Management
 
@@ -314,6 +315,9 @@ graph TD
 2. **ChromaDB:** Filter metadata `where={"user_id": user_id}` trong mọi retrieval
 3. **NetworkX Graph:** Mỗi node/edge có attribute `user_id`, filter khi query
 4. **Row-Level Security (RLS):** PostgreSQL RLS policies tự động apply
+
+> [!TIP]
+> **MVP Default User:** Vì MVP là single-user local, hệ thống sử dụng một UUID cố định làm `DEFAULT_USER_ID` (`00000000-0000-0000-0000-000000000000`). Điều này đảm bảo code tuân thủ kiến trúc đa người dùng ngay từ đầu mà không cần hệ thống Auth.
 
 ```sql
 -- Enable Row-Level Security

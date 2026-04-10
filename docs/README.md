@@ -50,15 +50,26 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 | [**User_Scenarios.md**](design/User_Scenarios.md) | Kịch bản sử dụng thực tế và luồng tương tác của Agent. |
 | [**Methodology.md**](design/Methodology.md) | Phương pháp học tập và combo công cụ theo lĩnh vực. |
 
+### 📋 Software Requirements Specification (`srs/`)
+
+> **Context Anchors** cho AI-assisted development. Đọc trước khi code.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**SRS_Overview.md**](srs/SRS_Overview.md) | Tổng quan hệ thống, scope MVP, business rules summary, module dependencies map. |
+| [**Business_Rules.md**](srs/Business_Rules.md) | **15 luật chơi bất biến** (🔴 BẤT BIẾN, 🟡 CỐ ĐỊNH, 🟢 KHUYẾN NGHỊ). |
+| [**User_Flows.md**](srs/User_Flows.md) | **8 end-to-end user flows** với mermaid diagrams, input/output, error handling. |
+| [**Module_Contracts.md**](srs/Module_Contracts.md) | **10 module contracts** — interface definitions, input/output contracts, error contracts. |
+
 ### 📋 Kế hoạch Triển khai (`plans/`)
 
 > Implementation plans, sprint checklists và audit findings.
 
 | Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
-| [**MVP_Implementation_Plan.md**](plans/MVP_Implementation_Plan.md) | Checklist thực thi Stage 1 (MVP), các Sprint 1-6 và Timeline chi tiết. |
-| [**Stage2_Implementation_Plan.md**](plans/Stage2_Implementation_Plan.md) | Kế hoạch Stage 2 — Intelligence & Memory (10 tuần). |
-| [**implementation_plan.md**](plans/implementation_plan.md) | Audit findings & polish plan cho Final Polish. |
+| [**MVP_Implementation_Plan.md**](plans/2026-04-08_mvp_implementation_lightrag.md) | Checklist thực thi Stage 1 (MVP), các Sprint 1-6 và Timeline chi tiết. |
+| [**Stage2_Implementation_Plan.md**](plans/2026-04-08_stage2_intelligence_memory.md) | Kế hoạch Stage 2 — Intelligence & Memory (10 tuần). |
+| [**implementation_plan.md**](plans/2026-04-08_audit_findings_implementation_plan.md) | Audit findings & polish plan cho Final Polish. |
 
 ### 📊 Báo cáo & Lộ trình (`reports/`)
 
@@ -66,10 +77,10 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 
 | Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
-| [**Roadmap.md**](reports/Roadmap.md) | Tầm nhìn dài hạn, cột mốc quan trọng (Milestones) và Success Criteria. |
-| [**PHASE5_COMPLETION.md**](reports/PHASE5_COMPLETION.md) | Báo cáo hoàn thành Sprint 5 — Frontend Interface. |
-| [**REFACTORING.md**](reports/REFACTORING.md) | Báo cáo refactoring v0.1.1 — Code quality, performance, testing. |
-| [**LAUNCH_CHECKLIST.md**](reports/LAUNCH_CHECKLIST.md) | Checklist kiểm tra trước khi launch MVP v0.1. |
+| [**Roadmap.md**](reports/2026-04-07_product_roadmap.md) | Tầm nhìn dài hạn, cột mốc quan trọng (Milestones) và Success Criteria. |
+| [**PHASE5_COMPLETION.md**](reports/2026-04-09_stage2_completion.md) | Báo cáo hoàn thành Sprint 5 — Frontend Interface. |
+| [**REFACTORING.md**](reports/2026-04-08_refactoring_log.md) | Báo cáo refactoring v0.1.1 — Code quality, performance, testing. |
+| [**LAUNCH_CHECKLIST.md**](reports/2026-04-07_mvp_launch_checklist.md) | Checklist kiểm tra trước khi launch MVP v0.1. |
 
 ### 🧪 Kiểm thử (`testing/`)
 
@@ -108,10 +119,12 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 ### Bắt đầu nhanh
 - 🚀 **New to AetherTutor?** → Đọc [Features.md](core/Features.md) để hiểu tính năng
 - 🏗️ **Want to understand architecture?** → Đọc [Architecture.md](core/Architecture.md)
+- 📝 **Ready to code with AI?** → Đọc bộ [SRS](srs/SRS_Overview.md) TRƯỚC KHI prompt AI
 - 💻 **Ready to develop?** → Xem [MVP_Implementation_Plan.md](plans/MVP_Implementation_Plan.md)
 
 ### Dành cho Developers
 - 📐 **Tech Stack** → [Technical_Spec.md](core/Technical_Spec.md)
+- 📝 **SRS (AI Coding)** → [srs/](srs/) — Business Rules, User Flows, Module Contracts
 - 🔌 **API Reference** → [API_Specifications.md](core/API_Specifications.md)
 - 🗄️ **Database Setup** → [Database.md](core/Database.md)
 - 🤝 **Contributing** → [Contributing.md](Contributing.md)
@@ -119,10 +132,10 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 ### Dành cho QA/Testing
 - 🧪 **E2E Testing** → [testing/E2E_INTEGRATION_TESTS.md](testing/E2E_INTEGRATION_TESTS.md)
 - ❌ **Error States** → [testing/ERROR_STATES_TESTING.md](testing/ERROR_STATES_TESTING.md)
-- ✅ **Launch Checklist** → [reports/LAUNCH_CHECKLIST.md](reports/LAUNCH_CHECKLIST.md)
+- ✅ **Launch Checklist** → [reports/2026-04-07_mvp_launch_checklist.md](reports/2026-04-07_mvp_launch_checklist.md)
 
 ### Dành cho Project Management
-- 📊 **Roadmap** → [reports/Roadmap.md](reports/Roadmap.md)
+- 📊 **Roadmap** → [reports/2026-04-07_product_roadmap.md](reports/2026-04-07_product_roadmap.md)
 - 📋 **Sprint Plans** → [plans/](plans/)
 - 📈 **Completion Reports** → [reports/](reports/)
 
