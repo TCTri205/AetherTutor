@@ -7,7 +7,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.main import app
-from app.database import Base, get_db
+from app.database import get_db
 from app.config import settings
 from tests.mocks.llm_mock import MockLLMService
 
@@ -124,11 +124,27 @@ async def processed_document(test_db: AsyncSession):
     Fixture tạo sẵn một document đã hoàn thành (COMPLETED) kèm Graph data mẫu.
     """
     from app.models.document import Document, DocumentStatus, ProcessingStep
-    from app.models.graph import GraphEntity, GraphRelation
+    from app.models.graph import GraphEntity
+    from app.models.user import User
+
+    default_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    
+    # Đảm bảo user tồn tại
+    user = await test_db.get(User, default_user_id)
+    if not user:
+        user = User(
+            id=default_user_id,
+            email="test@example.com",
+            hashed_password="hashed",
+            is_active=True
+        )
+        test_db.add(user)
+        await test_db.flush()
 
     doc_id = uuid.uuid4()
     doc = Document(
         id=doc_id,
+        user_id=default_user_id,
         filename="test_manual.pdf",
         file_path="/tmp/test_manual.pdf",
         content_hash=hashlib.sha256(b"test_manual").hexdigest(),
@@ -136,13 +152,16 @@ async def processed_document(test_db: AsyncSession):
         processing_step=ProcessingStep.COMPLETED,
     )
     test_db.add(doc)
+    await test_db.flush()
 
     # Thêm entity mẫu
     entity = GraphEntity(
         document_id=doc_id,
+        user_id=default_user_id,
         canonical_name="Albert Einstein",
         entity_type="PERSON",
-        description="Nhà vật lý lý thuyết người Đức."
+        description="Nhà vật lý lý thuyết người Đức.",
+        confidence=1.0
     )
     test_db.add(entity)
 

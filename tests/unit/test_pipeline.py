@@ -1,6 +1,6 @@
 import pytest
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
 from app.core.pipeline import LightRAGPipeline
 from app.models.document import DocumentStatus, ProcessingStep
 
@@ -12,8 +12,10 @@ class ConcreteLightRAGPipeline(LightRAGPipeline):
 
 @pytest.fixture
 def mock_repos():
+    mock_doc = AsyncMock()
+    mock_doc.session = AsyncMock()
     return {
-        'doc': AsyncMock(),
+        'doc': mock_doc,
         'chunk': AsyncMock(),
         'graph': AsyncMock()
     }
@@ -76,7 +78,8 @@ async def test_ingest_text_success(pipeline, mock_repos, mock_extractor):
 
         # Verify bulk inserts
         mock_repos['chunk'].bulk_insert.assert_called_once()
-        mock_repos['graph'].bulk_upsert_entities.assert_called_once()
+        # Expect user_id (None in this test since pipeline has no user_id)
+        mock_repos['graph'].bulk_upsert_entities.assert_called_once_with(ANY, doc_id, None)
 
         # Verify chroma additions (new wrapper methods)
         assert mock_chroma.add_chunks.called
@@ -93,14 +96,15 @@ async def test_ingest_error_handling(pipeline, mock_repos):
     with pytest.raises(Exception):
         await pipeline.ingest_text(doc_id, text)
     
-    # Verification of error logging in DB
-    # Note: If update_status itself fails, it might not be logged or might raise.
-    # Let's test a scenario where a later step fails.
+    # Reset side effect
     mock_repos['doc'].update_status.side_effect = None
     pipeline._chunk_text = MagicMock(side_effect=ValueError("Chunk error"))
     
     with pytest.raises(ValueError):
         await pipeline.ingest_text(doc_id, text)
     
+    # After our fix, session.rollback() is called before update_status
+    assert mock_repos['doc'].session.rollback.called
     # Should update status to FAILED
+    # Combined with the new try-except block in ingest_text
     mock_repos['doc'].update_status.assert_any_call(doc_id, DocumentStatus.FAILED, "Chunk error")

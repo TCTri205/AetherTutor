@@ -1,14 +1,11 @@
-import asyncio
 import uuid
 import logging
 from typing import Any
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from ..database import async_session_factory
 from ..models.document import DocumentStatus, ProcessingStep
 from ..models.user import User
-from ..models.flashcard import Flashcard
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
 from ..repositories.graph_repo import GraphRepository
@@ -24,7 +21,7 @@ from ..core.retriever import Retriever
 from ..core.pipeline import LightRAGPipeline
 from ..core.exceptions import PermanentProcessingError
 from .queue import redis_settings, get_redis_pool
-from ..constants import WORKER_JOB_TIMEOUT_SECONDS, WORKER_MAX_RETRIES, REDIS_DISTRIBUTED_LOCK_TTL, QUIZ_FEEDBACK_FLAG_THRESHOLD, SM2_DAILY_DIGEST_CRON
+from ..constants import WORKER_JOB_TIMEOUT_SECONDS, WORKER_MAX_RETRIES, REDIS_DISTRIBUTED_LOCK_TTL, QUIZ_FEEDBACK_FLAG_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -111,13 +108,15 @@ async def process_document_task(ctx: Any, doc_id_str: str):
             # Bước 1: Extract PDF
             if not doc.file_path:
                 raise PermanentProcessingError("Tài liệu không có đường dẫn file vật lý.")
-            
+
             await doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING)
             logger.info(f"Đang trích xuất văn bản từ PDF: {doc.file_path}")
             text = pdf_extractor.extract_text(doc.file_path)
-            
+
             if not text:
                 raise PermanentProcessingError("Không thể trích xuất văn bản có nghĩa từ file PDF.")
+
+            logger.info(f"Extracted {len(text)} characters ({len(text)//1000}KB) from PDF")
 
             # Bước 2: Ingest vào Pipeline
             logger.info(f"Đang bắt đầu Ingestion Pipeline cho {doc.filename}")
@@ -130,6 +129,7 @@ async def process_document_task(ctx: Any, doc_id_str: str):
         except PermanentProcessingError as e:
             # Lỗi không thể cứu vãn -> Mark FAILED và dừng lại
             logger.error(f"Lỗi xử lý vĩnh viễn cho {doc_id}: {e.message}")
+            await session.rollback()
             await doc_repo.update_status(doc_id, DocumentStatus.FAILED, e.message)
             await session.commit()
             return
@@ -137,8 +137,12 @@ async def process_document_task(ctx: Any, doc_id_str: str):
         except Exception as e:
             # Lỗi tạm thời (Network, LLM Timeout...) -> Mark FAILED và để ARQ Retry
             logger.exception(f"Lỗi hệ thống khi xử lý tài liệu {doc_id}: {str(e)}")
-            await doc_repo.update_status(doc_id, DocumentStatus.FAILED, f"Lỗi hệ thống: {str(e)}")
-            await session.commit()
+            await session.rollback()
+            try:
+                await doc_repo.update_status(doc_id, DocumentStatus.FAILED, f"Lỗi hệ thống: {str(e)}")
+                await session.commit()
+            except Exception as update_err:
+                logger.error(f"Không thể cập nhật trạng thái lỗi trong task: {update_err}")
             raise e
 
 async def sm2_daily_digest_task(ctx: Any, user_id_str: str):

@@ -27,7 +27,7 @@ RATE_LIMIT_CONVERSATION_CREATE = "20/minute"
 RATE_LIMIT_CHAT_STREAM = "60/minute"
 
 # Worker & Queue
-WORKER_JOB_TIMEOUT_SECONDS = 600  # 10 minutes
+WORKER_JOB_TIMEOUT_SECONDS = 1800  # 30 minutes (tăng từ 10 phút để xử lý documents lớn)
 WORKER_MAX_RETRIES = 3
 
 # ChromaDB
@@ -42,6 +42,7 @@ EMBEDDING_BATCH_SIZE = 100   # Max texts per batch request
 
 # Entity Extraction
 ENTITY_CONFIDENCE_DEFAULT = 0.5
+ENTITY_EXTRACTION_BATCH_SIZE = 5  # Number of chunks to process together in 1 LLM call
 
 # Pagination
 DEFAULT_PAGE_SIZE = 100

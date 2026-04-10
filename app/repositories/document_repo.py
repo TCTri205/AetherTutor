@@ -11,10 +11,11 @@ class DocumentRepository(BaseRepository[Document]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, Document)
 
-    async def create(self, filename: str, content_hash: str) -> Document:
+    async def create(self, filename: str, content_hash: str, user_id: uuid.UUID) -> Document:
         doc = Document(
             filename=filename,
             content_hash=content_hash,
+            user_id=user_id,
             status=DocumentStatus.PENDING,
             processing_step=ProcessingStep.INITIAL
         )

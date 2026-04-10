@@ -12,18 +12,17 @@ from ..config import settings
 from ..models.document import Document, DocumentStatus
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.graph_repo import GraphRepository
-from ..core.exceptions import PermanentProcessingError
 from ..services.chroma_client import chroma_client
-from ..services.pdf_extractor import pdf_extractor
 
 logger = logging.getLogger(__name__)
 
 class DocumentService:
-    def __init__(self, session: AsyncSession, arq_pool: ArqRedis):
+    def __init__(self, session: AsyncSession, arq_pool: ArqRedis, user_id: uuid.UUID):
         self.session = session
         self.arq_pool = arq_pool
         self.repo = DocumentRepository(session)
         self.graph_repo = GraphRepository(session)
+        self.user_id = user_id
 
     def _calculate_hash(self, content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
@@ -58,7 +57,7 @@ class DocumentService:
 
         # 3. Tạo bản ghi Document (PENDING)
         try:
-            doc = await self.repo.create(file.filename, content_hash)
+            doc = await self.repo.create(file.filename, content_hash, user_id=self.user_id)
         except IntegrityError:
             # Race condition: concurrent upload với cùng file — rollback và trả về doc đã tồn tại
             await self.session.rollback()

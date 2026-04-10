@@ -1,7 +1,6 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 from ..services.llm_service import llm_service
 from ..schemas.lightrag import ExtractionResult, ExtractedEntity
-import json
 
 class EntityExtractor:
     """

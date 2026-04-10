@@ -8,6 +8,8 @@ from app.models.document import DocumentStatus, Document
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(sys.platform == "win32", reason="asyncpg Proactor event loop incompatibility on Windows")
 async def test_worker_process_document_success(test_db: AsyncSession, sample_pdf_bytes: bytes):
@@ -19,7 +21,7 @@ async def test_worker_process_document_success(test_db: AsyncSession, sample_pdf
 
     # 1. Tạo document PENDING trong DB
     doc_repo = DocumentRepository(test_db)
-    doc = await doc_repo.create("worker_test.pdf", "somehash")
+    doc = await doc_repo.create("worker_test.pdf", "somehash", user_id=DEFAULT_USER_ID)
     doc_id = doc.id
 
     # Giả lập file vật lý tồn tại - sử dụng temp dir cross-platform

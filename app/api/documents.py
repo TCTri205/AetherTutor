@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
-from http import HTTPStatus
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import uuid
@@ -13,30 +13,32 @@ from ..core.entity_extractor import EntityExtractor
 from ..core.retriever import Retriever
 from ..schemas.lightrag import (
     DocumentIngestRequest,
-    DocumentUploadResponse,
     DocumentDetail,
-    ExtractionResult
 )
 from ..services.document_service import DocumentService
-from ..services.llm_service import llm_service
 from ..constants import RATE_LIMIT_DOCUMENT_UPLOAD, RATE_LIMIT_DOCUMENT_DELETE
 from .limiter import limiter
+from .dependencies import get_current_user_id
 from ..config import settings
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
-def get_doc_service(db: AsyncSession = Depends(get_db), request: Request = None) -> DocumentService:
+def get_doc_service(db: AsyncSession = Depends(get_db), request: Request = None, user_id: uuid.UUID = Depends(get_current_user_id)) -> DocumentService:
     arq_pool = request.app.state.arq_pool if request else None
-    return DocumentService(db, arq_pool)
+    return DocumentService(db, arq_pool, user_id=user_id)
 
 
 @router.post("/test-ingest")
-async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends(get_db)):
+async def test_ingest(
+    request: DocumentIngestRequest,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id)
+):
     """
     Ingest text content directly (Synchronous) for testing/debug.
     Bypasses the background worker.
-    
+
     SECURITY: Chỉ hoạt động trong chế độ DEBUG hoặc development.
     """
     if not settings.DEBUG and settings.APP_ENV == "production":
@@ -44,7 +46,7 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
             status_code=403,
             detail="Endpoint này bị vô hiệu hóa trong production. Set DEBUG=true để kích hoạt.",
         )
-    
+
     doc_repo = DocumentRepository(db)
     chunk_repo = ChunkRepository(db)
     graph_repo = GraphRepository(db)
@@ -56,13 +58,14 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
         chunk_repo=chunk_repo,
         graph_repo=graph_repo,
         extractor=extractor,
-        retriever=retriever
+        retriever=retriever,
+        user_id=user_id,
     )
 
     try:
         import hashlib
         content_hash = hashlib.sha256(request.content.encode()).hexdigest()
-        doc = await doc_repo.create(request.filename, content_hash)
+        doc = await doc_repo.create(request.filename, content_hash, user_id=user_id)
 
         await pipeline.ingest_text(doc.id, request.content)
         await db.commit()
@@ -71,9 +74,6 @@ async def test_ingest(request: DocumentIngestRequest, db: AsyncSession = Depends
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-
-
-from fastapi.responses import JSONResponse
 
 
 @router.post("/upload")

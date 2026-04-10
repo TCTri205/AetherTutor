@@ -1,5 +1,6 @@
 import uuid
 import hashlib
+import logging
 from typing import List, Dict, Any, Optional
 import tiktoken
 
@@ -13,10 +14,11 @@ from ..services.chroma_client import chroma_client
 from ..services.embedding_service import embedding_service
 from .entity_extractor import EntityExtractor
 from .retriever import Retriever
-from ..schemas.lightrag import ExtractionResult
 from ..constants import (
-    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE
+    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE, ENTITY_EXTRACTION_BATCH_SIZE
 )
+
+logger = logging.getLogger(__name__)
 
 class LightRAGPipeline(LightRAG):
     def __init__(
@@ -151,13 +153,30 @@ class LightRAGPipeline(LightRAG):
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING_ENTITIES)
             all_entities = []
             all_relations = []
-            
-            # Trích xuất theo từng chunk để đảm bảo độ chính xác (đặc biệt với model nhỏ 1.5B)
-            for chunk_text in raw_chunks:
-                extraction = await self.extractor.extract(chunk_text)
+
+            # OPTIMIZATION: Gom nhiều chunks vào 1 LLM call để giảm số lượng API calls
+            # Mỗi batch gồm ENTITY_EXTRACTION_BATCH_SIZE chunks (mặc định = 5)
+            batch_size = ENTITY_EXTRACTION_BATCH_SIZE
+            total_chunks = len(raw_chunks)
+            logger.info(f"Starting entity extraction: {total_chunks} chunks in batches of {batch_size}")
+
+            for batch_start in range(0, total_chunks, batch_size):
+                batch_end = min(batch_start + batch_size, total_chunks)
+                batch_chunks = raw_chunks[batch_start:batch_end]
+                
+                # Gộp các chunks thành 1 text với separator
+                combined_text = "\n\n---\n\n".join(batch_chunks)
+                
+                extraction = await self.extractor.extract(combined_text)
                 if extraction:
                     all_entities.extend(extraction.entities)
                     all_relations.extend(extraction.relations)
+                
+                # Log progress mỗi 10 batches
+                batch_num = (batch_start // batch_size) + 1
+                total_batches = (total_chunks + batch_size - 1) // batch_size
+                if batch_num % 10 == 0 or batch_num == total_batches:
+                    logger.info(f"Entity extraction progress: {batch_num}/{total_batches} batches ({batch_end}/{total_chunks} chunks done)")
 
             # Tối ưu hóa: Loại bỏ các thực thể trùng lặp bằng cách gộp chung (Deduplication)
             dedup_entities = self.extractor.deduplicate_entities(all_entities)
@@ -175,7 +194,7 @@ class LightRAGPipeline(LightRAG):
 
             # Lưu Graph vào SQL
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.BUILDING_GRAPH)
-            upserted_entities = await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id)
+            upserted_entities = await self.graph_repo.bulk_upsert_entities(entity_data_list, doc_id, effective_user_id)
 
             # Build mapping canonical_name → entity.id cho relations
             entity_id_map = {e.canonical_name: e.id for e in upserted_entities}
@@ -224,8 +243,17 @@ class LightRAGPipeline(LightRAG):
             return str(doc_id)
 
         except Exception as e:
-            # Ghi nhận lỗi vào DB
-            await self.doc_repo.update_status(doc_id, DocumentStatus.FAILED, str(e))
+            # LƯU Ý: Phải rollback trước khi thực hiện bất kỳ lệnh DB nào tiếp theo
+            # vì transaction hiện tại có thể đã bị PostgreSQL đánh dấu là aborted.
+            await self.doc_repo.session.rollback()
+            
+            # Ghi nhận lỗi vào DB dùng transaction mới (sau rollback)
+            try:
+                await self.doc_repo.update_status(doc_id, DocumentStatus.FAILED, str(e))
+                await self.doc_repo.session.commit()
+            except Exception as update_err:
+                logger.error(f"Không thể cập nhật trạng thái lỗi vào DB: {update_err}")
+
             # Dọn dẹp ChromaDB phòng trường hợp lỗi giữa chừng để đảm bảo tính nhất quán
             try:
                 chroma_client.delete_by_document_id(doc_id)

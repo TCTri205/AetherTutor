@@ -195,13 +195,20 @@ class ChatService:
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
+            # Đảm bảo rollback transaction bị hỏng trước khi ghi nhận lỗi
+            await chat_repo.session.rollback()
+            
             # Update với partial content nếu có lỗi bất ngờ
-            await chat_repo.update_message(
-                assistant_msg.id,
-                content=full_content,
-                status=MessageStatus.FAILED
-            )
-            await chat_repo.session.commit()
+            try:
+                await chat_repo.update_message(
+                    assistant_msg.id,
+                    content=full_content,
+                    status=MessageStatus.FAILED
+                )
+                await chat_repo.session.commit()
+            except Exception as update_err:
+                logger.error(f"Không thể cập nhật trạng thái lỗi chat: {update_err}")
+            
             yield f"event: error\ndata: {json.dumps({'detail': str(e), 'code': 'STREAM_INTERRUPTED'})}\n\n"
 
         finally:

@@ -27,8 +27,10 @@ class TestBaseRepository:
     async def test_get_by_id_success(self, repo, mock_session):
         """Test getting a record by ID."""
         mock_result = MagicMock()
+        default_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
         mock_doc = Document(
             id=uuid.uuid4(),
+            user_id=default_user_id,
             filename="test.pdf",
             content_hash="hash123"
         )
@@ -56,8 +58,10 @@ class TestBaseRepository:
     async def test_delete_success(self, repo, mock_session):
         """Test deleting an existing record."""
         # Mock get_by_id to return a document
+        default_user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
         mock_doc = Document(
             id=uuid.uuid4(),
+            user_id=default_user_id,
             filename="test.pdf",
             content_hash="hash123"
         )

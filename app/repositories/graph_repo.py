@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import select, delete, or_, func
+from sqlalchemy.orm import selectinload
 from ..models.graph import GraphEntity, GraphRelation
 from typing import List, Dict, Any
 import uuid
@@ -10,7 +11,7 @@ class GraphRepository(BaseRepository[GraphEntity]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, GraphEntity)
 
-    async def bulk_upsert_entities(self, entities: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphEntity]:
+    async def bulk_upsert_entities(self, entities: List[Dict[str, Any]], document_id: uuid.UUID, user_id: uuid.UUID) -> List[GraphEntity]:
         """
         Bulk upsert entities cho một document bằng single INSERT ... ON CONFLICT.
         Tối ưu: Thay vì N câu lệnh riêng lẻ, dùng 1 câu lệnh bulk.
@@ -21,10 +22,11 @@ class GraphRepository(BaseRepository[GraphEntity]):
         if not entities:
             return []
 
-        # Thêm document_id vào từng entity
+        # Thêm document_id và user_id vào từng entity
         enriched_entities = [
             {
                 "document_id": document_id,
+                "user_id": user_id,
                 **entity_data
             }
             for entity_data in entities
@@ -99,7 +101,14 @@ class GraphRepository(BaseRepository[GraphEntity]):
         return list(result.scalars().all())
 
     async def get_all_relations(self, document_id: uuid.UUID) -> List[GraphRelation]:
-        stmt = select(GraphRelation).where(GraphRelation.document_id == document_id)
+        stmt = (
+            select(GraphRelation)
+            .options(
+                selectinload(GraphRelation.source_entity),
+                selectinload(GraphRelation.target_entity),
+            )
+            .where(GraphRelation.document_id == document_id)
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
