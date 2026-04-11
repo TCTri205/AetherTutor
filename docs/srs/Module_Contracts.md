@@ -449,7 +449,60 @@ interface GraphStatsResponse {
 | 400 | `INVALID_QUERY` | Query quá ngắn | "Query must be at least 3 characters" |
 | 404 | `ENTITY_NOT_FOUND` | Entity ID không tồn tại | "Entity not found" |
 | 404 | `GRAPH_NOT_FOUND` | Document chưa có graph | "Graph not available. Document still processing" |
+| 400 | `MERGE_ERROR` | Lỗi khi gộp thực thể | "Entities cannot be merged" |
 | 500 | `GRAPH_ERROR` | NetworkX error | "Error building graph" |
+
+---
+
+**5. Import Obsidian Vault**
+```
+POST /api/v1/graph/import/obsidian
+```
+
+**Input Contract:**
+```typescript
+interface ObsidianImportRequest {
+  vault_path: string;            // Absolute path to Obsidian vault
+}
+```
+
+**Output Contract:**
+```typescript
+interface ObsidianImportResponse {
+  success: true;
+  data: {
+    job_id: string;              // UUID for background worker
+    status: 'queued';
+  };
+}
+```
+
+---
+
+**6. Merge Entities (Manual)**
+```
+POST /api/v1/graph/entities/merge
+```
+
+**Input Contract:**
+```typescript
+interface MergeEntitiesRequest {
+  primary_entity_id: string;     // UUID of the entity to keep
+  secondary_entity_id: string;   // UUID of the entity to merge into primary and delete
+}
+```
+
+**Output Contract:**
+```typescript
+interface MergeEntitiesResponse {
+  success: true;
+  data: {
+    status: 'success';
+    primary_id: string;
+    message: string;
+  };
+}
+```
 
 ---
 

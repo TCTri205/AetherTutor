@@ -30,6 +30,9 @@ data/
 htmlcov/
 alembic/versions/*.pyc
 
+# References (cloned repos for study)
+references/
+
 # Operating System
 .DS_Store
 Thumbs.db

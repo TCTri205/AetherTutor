@@ -95,6 +95,52 @@ docker compose up --build -d
 
 ---
 
+## 🔧 Docker Maintenance & Cleanup
+
+### Log Rotation
+Tất cả service đều được giới hạn log để tránh phình dung lượng:
+
+| Mode | Max Size | Max Files | Total/Service |
+|------|----------|-----------|---------------|
+| **Production** (`docker-compose.yml`) | 50MB | 5 | ~250MB |
+| **Development** (override tự động merge) | 100MB | 10 | ~1GB |
+
+### WSL2 .vhdx Cleanup (Windows)
+Docker Desktop trên Windows dùng file `.vhdx` — tự mở rộng nhưng KHÔNG tự thu nhỏ.
+Để giảm dung lượng sau khi xóa dữ liệu bên trong:
+
+```powershell
+# 1. Dừng Docker Desktop hoàn toàn
+# 2. Compact file vhdx (đường dẫn có thể khác tùy version)
+Optimize-VHD -Path "$env:LOCALAPPDATA\Docker\wsl\data\ext4.vhdx" -Mode Full
+# Hoặc dùng diskpart (built-in Windows):
+diskpart
+  select vdisk file="%LOCALAPPDATA%\Docker\wsl\data\ext4.vhdx"
+  attach vdisk readonly
+  compact vdisk
+  detach vdisk
+  exit
+```
+
+### Dọn dẹp Docker định kỳ
+```bash
+# Xóa dangling images (image cũ không còn dùng)
+docker image prune -f
+
+# Xóa unused images, containers, volumes, networks
+docker system prune -f
+
+# Xóa TẤT CẢ (kể cả volumes — CẢ THẬN: mất data DB)
+docker system prune --volumes -f
+```
+
+### Khi nào cần cleanup?
+- Sau nhiều lần `docker compose up --build` (tích tụ image layers)
+- Khi Docker Desktop báo "Disk image is using X GB"
+- Khi container không khởi động được do hết dung lượng
+
+---
+
 ## 📂 Documentation Hub
 
 Tài liệu chi tiết được tổ chức trong thư mục `docs/`:

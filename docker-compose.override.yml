@@ -1,0 +1,67 @@
+# ============================================================
+# Docker Compose Override — Development / Debug Mode
+# ============================================================
+# File này TỰ ĐỘNG được Docker Compose merge với docker-compose.yml
+# khi bạn chạy `docker compose up` (không cần -f).
+#
+# Mục đích:
+#   - Tăng giới hạn log để debug thoải mái (100MB x 10 files = 1GB/service)
+#   - Expose ports để truy cập trực tiếp từ host
+#   - Mount source code cho hot-reload (nếu cần)
+#
+# Để SKIP file này khi production: dùng `docker compose --profile production up`
+# hoặc xóa/đổi tên file này.
+# ============================================================
+
+services:
+  db:
+    ports:
+      - "5432:5432"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  redis:
+    ports:
+      - "6379:6379"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  chromadb:
+    ports:
+      - "8100:8000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  api:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+    # Cho phép override command để chạy với --reload khi debug
+    # Bỏ comment dòng dưới nếu muốn hot-reload:
+    # command: >
+    #   sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  worker:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  frontend:
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"

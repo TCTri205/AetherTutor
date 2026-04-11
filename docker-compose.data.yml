@@ -35,8 +35,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
@@ -55,8 +55,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
 
   chromadb:
     image: chromadb/chroma:0.5.0
@@ -79,8 +79,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
 
 volumes:
   postgres_data:

@@ -51,9 +51,6 @@ data/
 uploads/
 *.db
 
-# Docker
-docker-compose.override.yml
-
 # Documentation (không cần trong production image)
 docs/
 Research/

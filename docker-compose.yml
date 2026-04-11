@@ -22,8 +22,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
 
@@ -45,8 +45,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
 
@@ -68,9 +68,12 @@ services:
       retries: 3
       start_period: 15s
     volumes:
-      - chroma_data:/chroma/persona
+      - chroma_data:/chroma/chroma
     logging:
       driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
 
@@ -103,6 +106,11 @@ services:
         condition: service_healthy
     volumes:
       - ./uploads:/app/uploads
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
 
@@ -128,6 +136,11 @@ services:
       - chromadb
     volumes:
       - ./uploads:/app/uploads
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
     healthcheck:
@@ -139,7 +152,7 @@ services:
       start_period: 15s
 
   frontend:
-    build: 
+    build:
       context: ./frontend
       args:
         - VITE_API_URL=${VITE_API_URL:-http://localhost:8001}
@@ -149,6 +162,11 @@ services:
       - "3000:80"
     depends_on:
       - api
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     networks:
       - aethertutor-net
 

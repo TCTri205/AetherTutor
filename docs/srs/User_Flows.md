@@ -677,6 +677,41 @@ sequenceDiagram
 | **UF-006** | Knowledge Graph Visualization | Graph, NetworkX | BR-001 | 🟢 Thấp |
 | **UF-007** | Switch Local/Cloud Mode | Settings, LLM | BR-008 | 🟢 Thấp |
 | **UF-008** | Dashboard — Morning Routine | Dashboard | BR-001 | 🟢 Thấp |
+| **UF-009** | Obsidian Graph Integration | Graph, Worker | BR-008, BR-009 | 🟡 Trung bình |
+
+---
+
+## UF-009: Obsidian Graph Integration
+
+**Trigger:** User thực hiện import Obsidian vault vào hệ thống.
+**Actor:** User (Owner)
+**Preconditions:**
+- User có thư mục Obsidian vault trên máy tính (local).
+- Hệ thống đang ở trạng thái sẵn sàng.
+
+### Main Flow (Happy Path)
+
+| Step | Action | System Response | Data Flow |
+|---|---|---|---|
+| 1 | User mở Graph Explorer | Hiển thị toolbars | — |
+| 2 | Click "Import Obsidian Vault" | Mở modal nhập path | — |
+| 3 | Nhập path và xác nhận | Gửi yêu cầu import | `POST /api/v1/graph/import/obsidian` |
+| 4 | Backend nhận request | Tạo job ID, queue task cho worker | — |
+| 5 | Worker quét file .md | Trích xuất content, links, tags | Path → MarkdownParser |
+| 6 | Worker resolve thực thể | Kiểm tra trùng lặp và gộp tự động | `resolve_and_merge` |
+| 7 | Worker xây dựng quan hệ | Tạo liên kết từ wiki-links `[[...]]` | Relations → PostgreSQL |
+| 8 | Polling hoàn tất | Thông báo thành công, reload graph | `GET /api/v1/graph/import/obsidian/status/{job_id}` |
+
+### Alternative Flows
+
+| Flow | Điều kiện | Handling |
+|---|---|---|
+| **A1: Thư mục không tồn tại**| Step 4 | Trả về lỗi 400: "Vault path does not exist" |
+| **A2: Xung đột thực thể** | Step 6 | Nếu không chắc chắn, tạo thành thực thể mới và gợi ý gộp sau |
+
+### Business Rules áp dụng
+- [BR-008](Business_Rules.md#br-008-local-mode-rule) 🔴 — No cloud data
+- [BR-009](Business_Rules.md#br-009-note-backlink-rule) 🔴 — Backlink generation
 
 ---
 
