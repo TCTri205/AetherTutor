@@ -1,74 +1,62 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { graphService } from '../services/graph';
 import { exportGraphToSVG, downloadSVG } from '../lib/svgExport';
 import {
   Network,
   RefreshCcw,
   Maximize2,
-  Tag,
-  Search,
   Zap,
   MousePointer2,
   Loader2,
-  Share2,
-  MessageSquare,
-  X,
   Download,
   FolderOpen,
   Users,
   Layers,
+  Globe,
+  X,
+  FileText,
+  Share2,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import GraphSidebar from '../components/graph/GraphSidebar';
 import GraphView, { type GraphViewRef } from '../components/graph/GraphView';
-import GraphSearchBar from '../components/graph/GraphSearchBar';
 import AliasManager from '../components/graph/AliasManager';
 import MultiDocQuery from '../components/graph/MultiDocQuery';
+import TagFilter from '../components/graph/TagFilter';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
 // ─── Main Component ────────────────────────────────────────────
-export default function GraphExplorer() {
-  const { documentId } = useParams<{ documentId: string }>();
-  const location = useLocation();
+export default function GlobalGraphExplorer() {
+  const navigate = useNavigate();
   const graphViewRef = useRef<GraphViewRef>(null);
 
   const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [hasData, setHasData] = useState(false);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<any>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  // Import Obsidian State
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [vaultPath, setVaultPath] = useState('');
-  const [importStatus, setImportStatus] = useState<any>(null);
-  const [isImporting, setIsImporting] = useState(false);
 
-  // New features
+  // Tag filtering
   const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
-  const [isGlobalMode, setIsGlobalMode] = useState(false);
-  
+  const [tagEntityCounts, setTagEntityCounts] = useState<Record<string, number>>({});
+
+  // Document filter (optional - for multi-doc view)
+  const [availableDocs, setAvailableDocs] = useState<Array<{id: string, name: string}>>([]);
+  const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+
   // Modals
   const [activePanel, setActivePanel] = useState<'aliases' | 'multi-query' | null>(null);
 
-  // Fetch graph data
+  // Fetch global graph data
   const fetchGraphData = useCallback(async () => {
     setIsLoading(true);
     try {
-      let data: any;
-      if (documentId) {
-        data = await graphService.getDocumentGraph(documentId);
-      } else {
-        data = await graphService.getGlobalGraph();
-        setIsGlobalMode(true);
-      }
+      const data = await graphService.getGlobalGraph();
 
       if (!data.nodes || data.nodes.length === 0) {
         setHasData(false);
@@ -84,7 +72,7 @@ export default function GraphExplorer() {
           ...node,
           id: node.id,
           name: node.label || node.id,
-          val: node.val || (node.total_occurrences ? Math.sqrt(node.total_occurrences) * 5 : 5), 
+          val: node.val || (node.total_occurrences ? Math.sqrt(node.total_occurrences) * 5 : 5),
         })),
         links: data.edges.map((edge: any) => ({
           ...edge,
@@ -98,20 +86,29 @@ export default function GraphExplorer() {
       setGraphData(formattedData);
 
     } catch (err: any) {
-      toast.error(`Lỗi tải đồ thị: ${err.message}`);
+      toast.error(`Lỗi tải đồ thị toàn cục: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
-  }, [documentId]);
+  }, []);
 
   useEffect(() => {
     fetchGraphData();
-    
+
     // Fetch tags
     const fetchTags = async () => {
       try {
         const tags = await graphService.getTags();
         setAllTags(tags);
+
+        // Count entities per tag
+        const counts: Record<string, number> = {};
+        tags.forEach(tag => {
+          counts[tag] = graphData.nodes.filter((n: any) => 
+            n.tags && n.tags.includes(tag)
+          ).length;
+        });
+        setTagEntityCounts(counts);
       } catch (err) {
         console.error("Failed to fetch tags", err);
       }
@@ -120,12 +117,7 @@ export default function GraphExplorer() {
 
     // Keyboard Shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setSearchOpen(prev => !prev);
-      }
       if (e.key === 'Escape') {
-        setSearchOpen(false);
         setSidebarOpen(false);
         setActivePanel(null);
       }
@@ -133,7 +125,7 @@ export default function GraphExplorer() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fetchGraphData]);
+  }, [fetchGraphData, graphData]);
 
   // Node Click → sidebar
   const handleNodeClick = useCallback((node: any) => {
@@ -152,72 +144,17 @@ export default function GraphExplorer() {
       description: node.description,
       neighbors,
       degree: neighbors.length,
+      documents: node.documents || [], // Multi-doc info
     });
     setSidebarOpen(true);
   }, [graphData]);
 
-  // Handle Obsidian Import
-  const startImport = async () => {
-    if (!vaultPath.trim()) return;
-    setIsImporting(true);
-    try {
-      const response = await fetch('/api/v1/graph/import/obsidian', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ vault_path: vaultPath }),
-      });
-      const data = await response.json();
-      if (data.job_id) {
-        pollImportStatus(data.job_id);
-      }
-    } catch (err: any) {
-      toast.error(`Lỗi khởi tạo import: ${err.message}`);
-      setIsImporting(false);
-    }
+  // Navigate to document-specific graph
+  const navigateToDocGraph = (docId: string) => {
+    navigate(`/graph/${docId}`);
   };
 
-  const pollImportStatus = async (jobId: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/v1/graph/import/obsidian/status/${jobId}`);
-        const data = await response.json();
-        setImportStatus(data);
-        
-        if (data.status === 'completed' || data.status === 'failed') {
-          clearInterval(interval);
-          setIsImporting(false);
-          if (data.status === 'completed') {
-            toast.success("Import Obsidian hoàn tất!");
-            fetchGraphData();
-            setIsImportModalOpen(false);
-          } else {
-            toast.error(`Import thất bại: ${data.error}`);
-          }
-        }
-      } catch (err) {
-        clearInterval(interval);
-        setIsImporting(false);
-      }
-    }, 2000);
-  };
-
-  const exportToGraphML = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      const blob = await graphService.exportGraph(documentId, 'graphml');
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `graph_${documentId}.graphml`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      toast.success('Đã tải xuống file GraphML!');
-    } catch (err) {
-      toast.error('Lỗi khi xuất GraphML');
-    }
-  }, [documentId]);
-
+  // Export functions
   const exportToSVG = useCallback(() => {
     if (graphData.nodes.length === 0) {
       toast.error('Không có dữ liệu để xuất SVG');
@@ -232,12 +169,12 @@ export default function GraphExplorer() {
         showLabels: true,
         showEdgeLabels: true,
       });
-      downloadSVG(svgContent, `graph-${documentId || 'export'}.svg`);
+      downloadSVG(svgContent, 'graph-global.svg');
       toast.success('Đã tải xuống file SVG!');
     } catch (err) {
       toast.error('Lỗi khi xuất SVG');
     }
-  }, [graphData, documentId]);
+  }, [graphData]);
 
   return (
     <div className="flex h-full overflow-hidden bg-[#020617] rounded-3xl border border-white/5 relative">
@@ -246,8 +183,8 @@ export default function GraphExplorer() {
         <div className="absolute top-6 left-6 z-10 flex items-center gap-4 pointer-events-none">
           <Card className="glass px-6 py-4 border-white/10 shadow-2xl flex items-center gap-6 pointer-events-auto">
             <div className="flex items-center gap-3 pr-6 border-r border-white/10 font-bold text-white tracking-tight">
-              <Network className="w-5 h-5 text-primary" />
-              Bản Đồ Tri Thức
+              <Globe className="w-5 h-5 text-primary" />
+              Bản Đồ Tri Thức Toàn Cục
             </div>
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
@@ -256,12 +193,11 @@ export default function GraphExplorer() {
                   {graphData.nodes.length} Nút • {graphData.links.length} Cạnh
                 </span>
               </div>
-              
+
               {/* Tag Selection */}
               {allTags.length > 0 && (
                 <div className="flex items-center gap-2 pl-4 border-l border-white/10 shrink-0">
-                  <Tag className="w-3.5 h-3.5 text-muted-foreground" />
-                  <select 
+                  <select
                     className="bg-transparent text-xs text-white border-none focus:outline-none cursor-pointer"
                     value={selectedTag || ''}
                     onChange={(e) => setSelectedTag(e.target.value || null)}
@@ -281,15 +217,6 @@ export default function GraphExplorer() {
           </Card>
         </div>
 
-        {/* Search Bar */}
-        {searchOpen && (
-          <GraphSearchBar
-            nodes={graphData.nodes}
-            onNodeSelect={(node) => handleNodeClick(node)}
-            onClose={() => { setSearchOpen(false); setSearchQuery(''); }}
-          />
-        )}
-
         {/* Toolbox Overlay */}
         <div className="absolute bottom-6 right-6 z-10 flex flex-col gap-3">
           <Card className="glass p-2 border-white/10 shadow-2xl flex flex-col gap-2">
@@ -305,23 +232,11 @@ export default function GraphExplorer() {
             <Button
               variant="ghost"
               size="icon"
-              className={cn(
-                "rounded-lg h-9 w-9 transition-all",
-                searchOpen ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
-              )}
-              onClick={() => setSearchOpen(!searchOpen)}
-              title="Search entities"
-            >
-              <Search className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
               className="rounded-lg h-9 w-9 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-all"
-              onClick={exportToGraphML}
-              title="Export as GraphML"
+              onClick={exportToSVG}
+              title="Export Graph (PNG)"
             >
-              <Share2 className="w-4 h-4" />
+              <Download className="w-4 h-4" />
             </Button>
             <Button
               variant="ghost"
@@ -354,10 +269,10 @@ export default function GraphExplorer() {
               variant="ghost"
               size="icon"
               className="rounded-lg h-9 w-9 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-all"
-              onClick={() => setIsImportModalOpen(true)}
-              title="Import Obsidian Vault"
+              onClick={() => navigate('/graph')}
+              title="Back to Document Graph"
             >
-              <FolderOpen className="w-4 h-4" />
+              <FileText className="w-4 h-4" />
             </Button>
           </Card>
         </div>
@@ -381,18 +296,17 @@ export default function GraphExplorer() {
             data={graphData}
             onNodeClick={handleNodeClick}
             isLoading={isLoading}
-            searchQuery={searchQuery}
             selectedTag={selectedTag}
-            showObsidianBadges={true}
+            showObsidianBadges={false}
           />
         ) : !isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-              <Network className="w-10 h-10 text-muted-foreground/40" />
+              <Globe className="w-10 h-10 text-muted-foreground/40" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Chưa có Knowledge Graph</h3>
+            <h3 className="text-xl font-bold text-white mb-2">Chưa có đồ thị toàn cục</h3>
             <p className="text-muted-foreground text-sm max-w-md">
-              Hãy tải lên và xử lý tài liệu PDF để hệ thống tự động khởi tạo đồ thị.
+              Hãy xử lý nhiều tài liệu để xây dựng đồ thị tri thức liên văn bản.
             </p>
           </div>
         ) : null}
@@ -401,7 +315,7 @@ export default function GraphExplorer() {
         {isLoading && (
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <span className="font-bold text-white tracking-widest uppercase text-xs animate-pulse">Đang ánh xạ tri thức...</span>
+            <span className="font-bold text-white tracking-widest uppercase text-xs animate-pulse">Đang ánh xạ tri thức toàn cục...</span>
           </div>
         )}
       </div>
@@ -411,103 +325,30 @@ export default function GraphExplorer() {
         isOpen={sidebarOpen}
         onClose={() => { setSidebarOpen(false); setSelectedEntity(null); }}
         entity={selectedEntity}
-        documentId={documentId!}
+        documentId={selectedEntity?.documents?.[0]} // Use first document if available
       />
 
-      {/* Import Modal */}
-      {isImportModalOpen && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md">
-          <Card className="glass w-[450px] p-8 border-white/10 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                <FolderOpen className="w-6 h-6 text-primary" />
-                Import Obsidian Vault
-              </h3>
-              <button 
-                onClick={() => setIsImportModalOpen(false)}
-                className="text-muted-foreground hover:text-white"
-                disabled={isImporting}
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Nhập đường dẫn tuyệt đối tới Obsidian Vault của bạn. Hệ thống sẽ trích xuất 
-              các ghi chú (`.md`), liên kết wiki và gắn thẻ vào bản đồ tri thức này.
-            </p>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest px-1">Đường dẫn Vault</label>
-                <input 
-                  type="text" 
-                  value={vaultPath}
-                  onChange={(e) => setVaultPath(e.target.value)}
-                  placeholder="e.g. D:\MyNotes\Knowledge"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 transition-all outline-none"
-                  disabled={isImporting}
-                />
-              </div>
-            </div>
-
-            {importStatus && (
-              <div className={cn(
-                "p-4 rounded-xl border text-sm",
-                importStatus.status === 'processing' ? "bg-primary/5 border-primary/20 text-primary animate-pulse" :
-                importStatus.status === 'completed' ? "bg-emerald-500/5 border-emerald-500/20 text-emerald-400" :
-                importStatus.status === 'failed' ? "bg-rose-500/5 border-rose-500/20 text-rose-400" : ""
-              )}>
-                {importStatus.status === 'processing' && "Đang xử lý vault..."}
-                {importStatus.status === 'completed' && (
-                  <div>
-                    Import hoàn tất! 
-                    <div className="text-[10px] mt-1 opacity-70">
-                      Đã nhập: {importStatus.result.entities_imported} thực thể, {importStatus.result.relations_imported} quan hệ.
-                    </div>
-                  </div>
-                )}
-                {importStatus.status === 'failed' && `Lỗi: ${importStatus.error}`}
-              </div>
-            )}
-
-            <Button 
-              className="w-full h-12 rounded-xl text-md font-bold"
-              onClick={startImport}
-              disabled={isImporting || !vaultPath.trim()}
-            >
-              {isImporting ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  Đang xử lý...
-                </>
-              ) : "Bắt đầu Import"}
-            </Button>
-          </Card>
-        </div>
-      )}
       {/* Advanced Panels (Alias Manager & Multi Query) */}
       {activePanel && (
         <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
           <Card className="glass w-full max-w-4xl max-h-[90vh] flex flex-col border-white/10 shadow-2xl relative overflow-hidden">
              <div className="flex items-center justify-between p-6 border-b border-white/5">
                 <h3 className="text-xl font-bold text-white flex items-center gap-3">
-                  {activePanel === 'aliases' ? (
-                    <><Users className="w-6 h-6 text-primary" /> Quản lý Bí danh thực thể</>
-                  ) : (
-                    <><Layers className="w-6 h-6 text-primary" /> Truy vấn Xuyên tài liệu</>
-                  )}
+                  {activePanel === 'aliases' && <><Users className="w-6 h-6 text-primary" />Quản lý Bí danh</>}
+                  {activePanel === 'multi-query' && <><Layers className="w-6 h-6 text-primary" />Truy vấn Đa tài liệu</>}
                 </h3>
                 <button 
                   onClick={() => setActivePanel(null)}
-                  className="p-2 rounded-lg hover:bg-white/10 text-muted-foreground hover:text-white"
+                  className="text-muted-foreground hover:text-white"
                 >
-                  <X className="w-6 h-6" />
+                  <X className="w-5 h-5" />
                 </button>
-             </div>
-             <div className="flex-1 overflow-y-auto p-6 bg-[#020617]/50">
-                {activePanel === 'aliases' ? <AliasManager /> : <MultiDocQuery />}
-             </div>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6">
+                {activePanel === 'aliases' && <AliasManager />}
+                {activePanel === 'multi-query' && <MultiDocQuery />}
+              </div>
           </Card>
         </div>
       )}

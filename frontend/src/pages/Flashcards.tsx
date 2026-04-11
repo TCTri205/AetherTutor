@@ -237,20 +237,23 @@ export default function Flashcards() {
               exit={{ opacity: 0, y: 10 }}
               className="flex gap-3 w-full max-w-lg"
             >
-              {(Object.entries(QUALITY_LABELS) as [ReviewQuality, typeof QUALITY_LABELS[ReviewQuality]][]).map(
-                ([quality, { label, color, bg }]) => (
-                  <Button
-                    key={quality}
-                    variant="outline"
-                    className={cn('flex-1 flex-col py-4 gap-1 border', bg)}
-                    onClick={() => handleReview(quality)}
-                  >
-                    <span className={cn('font-bold text-sm', color)}>{label}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {quality === 0 ? '0' : quality === 2 ? '2' : quality === 3 ? '3' : '5'}
-                    </span>
-                  </Button>
-                ),
+              {(Object.keys(QUALITY_LABELS) as unknown as ReviewQuality[]).map(
+                (quality) => {
+                  const { label, color, bg } = QUALITY_LABELS[quality];
+                  return (
+                    <Button
+                      key={quality}
+                      variant="outline"
+                      className={cn('flex-1 flex-col py-4 gap-1 border', bg)}
+                      onClick={() => handleReview(quality)}
+                    >
+                      <span className={cn('font-bold text-sm', color)}>{label}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {quality}
+                      </span>
+                    </Button>
+                  );
+                },
               )}
             </motion.div>
           )}

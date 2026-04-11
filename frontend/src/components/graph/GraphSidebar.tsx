@@ -5,12 +5,18 @@ import {
   Share2,
   MessageSquare,
   ArrowRight,
-  Hash
+  Hash,
+  Database,
+  Tag,
+  File
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { cn } from '../../lib/utils';
+import { graphService } from '../../services/graph';
+import { useEffect, useState } from 'react';
+import BacklinksPanel from './BacklinksPanel';
 
 interface GraphSidebarProps {
   isOpen: boolean;
@@ -21,6 +27,7 @@ interface GraphSidebarProps {
 
 interface GraphEntityData {
   id: string;
+  db_id?: string;
   label: string;
   type: string;
   description?: string;
@@ -30,6 +37,10 @@ interface GraphEntityData {
     description?: string;
   }>;
   degree?: number;
+  source?: string;
+  tags?: string[];
+  file_path?: string;
+  metadata?: Record<string, any>;
 }
 
 const typeColors: Record<string, string> = {
@@ -48,6 +59,10 @@ const typeIcons: Record<string, any> = {
 
 export default function GraphSidebar({ isOpen, onClose, entity, documentId }: GraphSidebarProps) {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Current Backlinks logic moved to BacklinksPanel component
+  }, [entity?.id, isOpen]);
 
   if (!entity) return null;
 
@@ -113,6 +128,43 @@ export default function GraphSidebar({ isOpen, onClose, entity, documentId }: Gr
               </div>
             )}
 
+            {/* Source & Tags */}
+            <div className="space-y-3">
+              {entity.source && (
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <Database className="w-3 h-3 text-primary" />
+                  <span className="font-bold uppercase tracking-wider">Nguồn:</span>
+                  <span className={cn(
+                    "px-2 py-0.5 rounded-full border",
+                    entity.source === 'obsidian_import' ? "bg-purple-500/10 text-purple-400 border-purple-500/20" : "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                  )}>
+                    {entity.source === 'obsidian_import' ? 'Obsidian' : 'AI Extracted'}
+                  </span>
+                </div>
+              )}
+
+              {entity.tags && entity.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  <Tag className="w-3 h-3 text-primary mt-1" />
+                  {entity.tags.map(tag => (
+                    <Badge key={tag} variant="secondary" className="text-[9px] bg-white/5 font-normal">
+                      #{tag}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {entity.file_path && (
+                <div className="flex items-start gap-2 text-[10px] text-muted-foreground">
+                  <File className="w-3 h-3 text-primary shrink-0" />
+                  <span className="font-bold uppercase tracking-wider">File:</span>
+                  <span className="truncate hover:text-white cursor-help" title={entity.file_path}>
+                    {entity.file_path.split(/[\\/]/).pop()}
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* Stats */}
             <div className="grid grid-cols-2 gap-2">
               <div className="p-3 rounded-xl bg-white/5 border border-white/10">
@@ -162,6 +214,19 @@ export default function GraphSidebar({ isOpen, onClose, entity, documentId }: Gr
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Backlinks */}
+            {entity.db_id && (
+              <div className="pt-2 border-t border-white/5">
+                <BacklinksPanel 
+                  entityId={entity.db_id} 
+                  onLinkClick={(name) => {
+                    // Logic to jump to node by name if needed
+                    console.log("Jump to neighbor:", name);
+                  }} 
+                />
               </div>
             )}
 

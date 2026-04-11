@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import Vault from './pages/Vault';
 import Chat from './pages/Chat';
 import GraphExplorer from './pages/GraphExplorer';
+import GlobalGraphExplorer from './pages/GlobalGraphExplorer';
 import Flashcards from './pages/Flashcards';
 import Quiz from './pages/Quiz';
 import Zettelkasten from './pages/Zettelkasten';
@@ -51,6 +52,15 @@ const router = createBrowserRouter([
         element: (
           <ErrorBoundary>
             <DocumentGuard><GraphExplorer /></DocumentGuard>
+          </ErrorBoundary>
+        ),
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'global-graph',
+        element: (
+          <ErrorBoundary>
+            <GlobalGraphExplorer />
           </ErrorBoundary>
         ),
         errorElement: <ErrorPage />,

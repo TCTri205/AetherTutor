@@ -85,7 +85,7 @@ export default function Zettelkasten() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ title: '', content: '', note_type: 'literature' as NoteType, tags: [] as string[] });
-  const [newForm, setNewForm] = useState<NoteCreate>({ title: '', content: '', note_type: 'literature', tags: [] });
+  const [newForm, setNewForm] = useState<NoteCreate>({ title: '', content: '', note_type: 'literature', tags: [] as string[] });
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [tagInput, setTagInput] = useState('');
@@ -117,7 +117,7 @@ export default function Zettelkasten() {
 
     const nodes: Node[] = graph.nodes.map((n, i) => ({
       id: String(n.id),
-      data: { label: n.title, type: n.note_type, tags: n.tags },
+      data: { label: n.title, type: n.note_type, tags: n.tags || [] },
       position: { x: (i % 5) * 280, y: Math.floor(i / 5) * 160 },
       style: {
         background: `${nodeColors[n.note_type] || '#3b82f6'}15`,
@@ -206,14 +206,14 @@ export default function Zettelkasten() {
     if (isEditing) {
       setEditForm({ ...editForm, tags: [...editForm.tags, tag] });
     } else {
-      setNewForm({ ...newForm, tags: [...newForm.tags, tag] });
+      setNewForm({ ...newForm, tags: [...(newForm.tags || []), tag] });
     }
     setTagInput('');
   };
 
   const removeTag = (idx: number, form: 'new' | 'edit') => {
     if (form === 'new') {
-      setNewForm({ ...newForm, tags: newForm.tags.filter((_, i) => i !== idx) });
+      setNewForm({ ...newForm, tags: (newForm.tags || []).filter((_, i) => i !== idx) });
     } else {
       setEditForm({ ...editForm, tags: editForm.tags.filter((_, i) => i !== idx) });
     }
@@ -261,7 +261,7 @@ export default function Zettelkasten() {
                 return colors[type] || '#3b82f6';
               }}
               maskColor="rgba(0,0,0,0.4)"
-              bgColor="#0f172a"
+              className="bg-[#0f172a]"
             />
           </ReactFlow>
         </div>
@@ -367,7 +367,7 @@ export default function Zettelkasten() {
                       <Badge variant="outline" className={NOTE_TYPE_COLORS[currentNote.note_type as NoteType]}>
                         {NOTE_TYPE_LABELS[currentNote.note_type as NoteType]}
                       </Badge>
-                      {currentNote.tags.map((tag, i) => (
+                      {(currentNote.tags || []).map((tag, i) => (
                         <Badge key={i} variant="outline" className="text-[10px]">#{tag}</Badge>
                       ))}
                     </div>
@@ -547,7 +547,7 @@ export default function Zettelkasten() {
                     </Button>
                   </div>
                 </div>
-                {newForm.tags.length > 0 && (
+                {(newForm.tags && newForm.tags.length > 0) && (
                   <div className="flex flex-wrap gap-2">
                     {newForm.tags.map((tag, i) => (
                       <Badge key={i} variant="outline" className="flex items-center gap-1">
@@ -609,7 +609,7 @@ export default function Zettelkasten() {
                         <Clock className="w-3 h-3" />
                         {formatDistanceToNow(new Date(note.updated_at), { locale: vi })}
                       </span>
-                      {note.tags.length > 0 && (
+                      {(note.tags && note.tags.length > 0) && (
                         <span className="flex items-center gap-1">
                           <Tag className="w-3 h-3" />
                           {note.tags.slice(0, 3).join(', ')}
