@@ -42,6 +42,12 @@ class Document(Base, TimestampMixin):
     # Relationships
     user = relationship("User", back_populates="documents")
     quizzes = relationship("Quiz", back_populates="document")
+    document_associations = relationship(
+        "DocumentTopic", back_populates="document", cascade="all, delete-orphan"
+    )
+    topics = relationship(
+        "Topic", secondary="document_topics", back_populates="documents"
+    )
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename={self.filename}, status={self.status})>"

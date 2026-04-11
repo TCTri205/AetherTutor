@@ -65,7 +65,7 @@ class Flashcard(Base, TimestampMixin):
 
 class StudySession(Base, TimestampMixin):
     __tablename__ = "study_sessions"
-    
+
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
@@ -75,6 +75,11 @@ class StudySession(Base, TimestampMixin):
     flashcard_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("flashcards.id", ondelete="CASCADE"), nullable=False
     )
+    group_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("study_session_groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     quality: Mapped[int] = mapped_column(Integer, nullable=False)  # SM-2 quality: 0-5
     response_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(
@@ -83,13 +88,15 @@ class StudySession(Base, TimestampMixin):
     reviewed_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, server_default="NOW()"
     )
-    
+
     # Relationships
     user = relationship("User", back_populates="study_sessions")
     flashcard = relationship("Flashcard", back_populates="study_sessions")
-    
+    group = relationship("StudySessionGroup", back_populates="sessions")
+
     __table_args__ = (
         Index("idx_study_sessions_user_id", "user_id"),
         Index("idx_study_sessions_flashcard_id", "flashcard_id"),
         Index("idx_study_sessions_reviewed_at", "reviewed_at"),
+        Index("idx_study_sessions_group", "group_id"),
     )

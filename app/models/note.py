@@ -48,6 +48,12 @@ class Note(Base, TimestampMixin):
         back_populates="target_note",
         cascade="all, delete-orphan"
     )
+    topics = relationship(
+        "Topic", secondary="note_topics", back_populates="notes"
+    )
+    note_associations = relationship(
+        "NoteTopic", back_populates="note", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("idx_notes_user_id", "user_id"),

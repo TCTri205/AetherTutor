@@ -26,6 +26,12 @@ RATE_LIMIT_DOCUMENT_DELETE = "20/minute"
 RATE_LIMIT_CONVERSATION_CREATE = "20/minute"
 RATE_LIMIT_CHAT_STREAM = "60/minute"
 
+# Rate Limiting — Auth (v1.2)
+RATE_LIMIT_LOGIN = "5/minute"
+RATE_LIMIT_REGISTER = "3/minute"
+RATE_LIMIT_REFRESH = "10/minute"
+RATE_LIMIT_LOGOUT = "10/minute"
+
 # Worker & Queue
 WORKER_JOB_TIMEOUT_SECONDS = 1800  # 30 minutes (tăng từ 10 phút để xử lý documents lớn)
 WORKER_MAX_RETRIES = 3

@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     SMTP_FROM_EMAIL: Optional[str] = None
 
+    # Authentication (JWT & Bcrypt)
+    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    BCRYPT_ROUNDS: int = 12
+
     # Computed URLs
     @property
     def DATABASE_URL(self) -> str:

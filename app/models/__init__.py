@@ -9,6 +9,13 @@ from .flashcard import Flashcard, StudySession
 from .quiz import Quiz, QuizResult, QuizAnswer
 from .note import Note, NoteLink
 
+# v1.2: User, Session & Topic Management
+from .user_session import UserSession
+from .topic import Topic
+from .document_topic import DocumentTopic
+from .note_topic import NoteTopic
+from .study_session_group import StudySessionGroup
+
 __all__ = [
     "Base",
     "User",
@@ -30,4 +37,10 @@ __all__ = [
     "QuizAnswer",
     "Note",
     "NoteLink",
+    # v1.2: User, Session & Topic
+    "UserSession",
+    "Topic",
+    "DocumentTopic",
+    "NoteTopic",
+    "StudySessionGroup",
 ]

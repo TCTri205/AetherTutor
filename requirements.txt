@@ -31,6 +31,11 @@ tiktoken>=0.7.0
 spacy>=3.7.0
 
 
+# Authentication
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+python-slugify>=8.0.0
+
 # Notifications
 aiosmtplib>=3.0.0
 

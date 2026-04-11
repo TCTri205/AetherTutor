@@ -31,6 +31,24 @@ logger = logging.getLogger(__name__)
 # Cron Dispatcher Task
 # =============================================
 
+async def cleanup_expired_sessions_task(ctx: Any):
+    """
+    Cron job: Dọn dẹp user sessions đã hết hạn và bị revoke > 30 ngày.
+    Chạy hàng ngày lúc 2 AM.
+    """
+    from ..repositories.session import UserSessionRepository
+
+    logger.info("Session cleanup: Starting")
+    try:
+        async with async_session_factory() as session:
+            session_repo = UserSessionRepository(session)
+            deleted = await session_repo.cleanup_expired_sessions(older_than_days=30)
+            await session.commit()
+        logger.info(f"Session cleanup: Deleted {deleted} expired sessions")
+    except Exception as e:
+        logger.error(f"Session cleanup failed: {e}")
+
+
 async def sm2_dispatcher_task(ctx: Any):
     """
     Cron job: Chạy hàng ngày theo SM2_DAILY_DIGEST_CRON.
@@ -333,12 +351,31 @@ from arq.cron import CronJob
 
 class WorkerSettings:
     functions = [
+        cleanup_expired_sessions_task,
         process_document_task,
         sm2_daily_digest_task,
         quiz_feedback_analysis_task,
         import_obsidian_vault_task,
     ]
     cron_jobs = [
+        CronJob(
+            "session_cleanup",  # name
+            cleanup_expired_sessions_task,  # coroutine
+            hour={2},  # 2 AM
+            minute={0},
+            second={0},
+            microsecond=0,
+            month=None,
+            day=None,
+            weekday=None,
+            run_at_startup=False,
+            unique=True,
+            job_id=None,
+            timeout_s=None,
+            keep_result_s=None,
+            keep_result_forever=None,
+            max_tries=1,
+        ),
         CronJob(
             "sm2_daily_digest",  # name
             sm2_dispatcher_task,  # coroutine

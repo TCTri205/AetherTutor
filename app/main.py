@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import settings
-from .api import documents, chat, graph, flashcards, quiz, notes
+from .api import documents, chat, graph, flashcards, quiz, notes, auth, users, topics
 from .api.limiter import limiter
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
@@ -149,4 +149,9 @@ app.include_router(graph.router, prefix="/api/v1")
 app.include_router(flashcards.router, prefix="/api/v1")
 app.include_router(quiz.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
+
+# NEW: Auth, Users, Topics routers (v1.2)
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")
+app.include_router(topics.router, prefix="/api/v1")
 
