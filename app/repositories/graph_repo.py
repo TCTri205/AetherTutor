@@ -1,9 +1,10 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
+import sqlalchemy as sa
 from sqlalchemy import select, delete, or_, func
 from sqlalchemy.orm import selectinload
 from ..models.graph import GraphEntity, GraphRelation
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import uuid
 from .base import BaseRepository
 
@@ -46,12 +47,26 @@ class GraphRepository(BaseRepository[GraphEntity]):
                 "description": insert(GraphEntity).excluded.description,
                 "entity_type": insert(GraphEntity).excluded.entity_type,
                 "confidence": insert(GraphEntity).excluded.confidence,
+                "source": insert(GraphEntity).excluded.source,
+                "tags": insert(GraphEntity).excluded.tags,
+                "file_path": insert(GraphEntity).excluded.file_path,
+                "metadata": sa.text("graph_entities.metadata || EXCLUDED.metadata"), # Merge JSONB
             }
         ).returning(GraphEntity)
         
         result = await self.session.execute(stmt)
         await self.session.flush()
         return list(result.scalars().all())
+    async def upsert_entity(self, user_id: uuid.UUID, document_id: Optional[uuid.UUID], entity_data: Dict[str, Any]) -> GraphEntity:
+        """
+        Upsert a single entity. If document_id is None, it's considered a 'global' or 'unsorted' entity.
+        Note: The unique constraint is on (document_id, canonical_name).
+        If document_id is None, we need a special document_id or handle it differently.
+        For now, let's assume Obsidian imports use a 'global' document_id or we use document_id=uuid.NAMESPACE_DNS as placeholder.
+        """
+        doc_id = document_id or uuid.NAMESPACE_DNS # Placeholder for global
+        entities = await self.bulk_upsert_entities([entity_data], doc_id, user_id)
+        return entities[0]
 
     async def bulk_upsert_relations(self, relations: List[Dict[str, Any]], document_id: uuid.UUID) -> List[GraphRelation]:
         """
@@ -88,6 +103,9 @@ class GraphRepository(BaseRepository[GraphEntity]):
             constraint="uq_graph_relations_doc_source_target_type",
             set_={
                 "description": insert(GraphRelation).excluded.description,
+                "source": insert(GraphRelation).excluded.source,
+                "is_backlink": insert(GraphRelation).excluded.is_backlink,
+                "metadata": sa.text("graph_relations.metadata || EXCLUDED.metadata"), # Merge JSONB
             }
         ).returning(GraphRelation)
 
@@ -197,4 +215,57 @@ class GraphRepository(BaseRepository[GraphEntity]):
         await self.session.execute(
             delete(GraphRelation).where(GraphRelation.document_id == document_id)
         )
+        await self.session.flush()
+
+    async def migrate_relations(self, old_entity_id: uuid.UUID, new_entity_id: uuid.UUID):
+        """
+        Di chuyển toàn bộ quan hệ (source và target) từ thực thể cũ sang thực thể mới.
+        Xử lý xung đột UniqueConstraint nếu quan hệ đã tồn tại ở thực thể mới.
+        """
+        # 1. Update source_entity_id
+        # Chúng ta thực hiện từng dòng để dễ xử lý xung đột hoặc dùng UPSERT logic
+        stmt_source = (
+            sa.update(GraphRelation)
+            .where(GraphRelation.source_entity_id == old_entity_id)
+            .values(source_entity_id=new_entity_id)
+        )
+        
+        # 2. Update target_entity_id
+        stmt_target = (
+            sa.update(GraphRelation)
+            .where(GraphRelation.target_entity_id == old_entity_id)
+            .values(target_entity_id=new_entity_id)
+        )
+
+        try:
+            await self.session.execute(stmt_source)
+            await self.session.execute(stmt_target)
+        except sa.exc.IntegrityError:
+            # Nếu xảy ra xung đột UniqueConstraint, ta cần xử lý thủ công:
+            # Tìm các quan hệ gây xung đột, xóa chúng và giữ lại quan hệ cũ (hoặc ngược lại)
+            await self.session.rollback()
+            
+            # Cách an toàn hơn: Lấy tất cả quan hệ cũ, thử cập nhật từng cái, nếu lỗi thì xóa
+            relations_stmt = select(GraphRelation).where(
+                or_(
+                    GraphRelation.source_entity_id == old_entity_id,
+                    GraphRelation.target_entity_id == old_entity_id
+                )
+            )
+            res = await self.session.execute(relations_stmt)
+            relations = res.scalars().all()
+            
+            for rel in relations:
+                try:
+                    if rel.source_entity_id == old_entity_id:
+                        rel.source_entity_id = new_entity_id
+                    if rel.target_entity_id == old_entity_id:
+                        rel.target_entity_id = new_entity_id
+                    await self.session.flush()
+                except sa.exc.IntegrityError:
+                    await self.session.rollback()
+                    # Quan hệ này đã tồn tại ở thực thể mới, xóa quan hệ cũ
+                    await self.session.delete(rel)
+                    await self.session.flush()
+        
         await self.session.flush()

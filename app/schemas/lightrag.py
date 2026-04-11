@@ -53,9 +53,17 @@ class DocumentDetail(BaseModel):
 
 class GraphNodeView(BaseModel):
     id: str  # Entity name làm ID
+    db_id: Optional[str] = None # Database UUID
     label: str
     type: str
     description: Optional[str] = None
+    source: Optional[str] = None
+    tags: Optional[List[str]] = None
+    file_path: Optional[str] = None
+    metadata: Optional[dict] = None
+    community: Optional[int] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
 
 class GraphEdgeView(BaseModel):
     id: str  # Database UUID của relation làm Edge ID
@@ -63,6 +71,11 @@ class GraphEdgeView(BaseModel):
     target: str
     label: str
     description: Optional[str] = None
+
+class DocumentGraphResponse(BaseModel):
+    nodes: List[GraphNodeView]
+    edges: List[GraphEdgeView]
+    stats: Optional[dict] = None
 
 
 # =============================================

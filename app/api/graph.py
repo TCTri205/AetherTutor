@@ -8,6 +8,9 @@ from ..core.retriever import Retriever
 from ..services.llm_service import llm_service
 from ..services.cross_verification_service import cross_verification_service
 from ..services.entity_alias_service import get_alias_resolution_service, EntityAliasResolutionService
+from ..services.backlink_service import BacklinkService
+from ..services.tag_service import TagService
+from ..services.entity_resolution_service import EntityResolutionService
 from ..schemas.lightrag import (
     QueryRequest,
     QueryResponse,
@@ -20,8 +23,11 @@ from ..schemas.lightrag import (
     MultiDocQueryRequest,
     MultiDocQueryResponse,
     CrossVerificationSummary,
+    DocumentGraphResponse,
 )
 from .dependencies import get_optional_user_id, get_current_user_id
+from ..worker.queue import get_redis_pool
+from pydantic import BaseModel
 import uuid
 
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -49,7 +55,7 @@ async def query_graph(request: QueryRequest, user_id: Optional[uuid.UUID] = Depe
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{document_id}/view", response_model=Dict[str, List[Any]])
+@router.get("/{document_id}/view", response_model=DocumentGraphResponse)
 async def get_document_graph(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db)
@@ -64,16 +70,54 @@ async def get_document_graph(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    from ..core.graph_builder import get_graph_builder
+    import networkx as nx
+    builder = get_graph_builder()
+    
+    # Try to load graph for advanced analysis (communities, positions)
+    # We don't fail if load fails, just return raw data
+    await builder.load_graph(str(document_id))
+    nx_graph = builder.get_graph()
+    
+    communities = {}
+    positions = {}
+    
+    if nx_graph.number_of_nodes() > 0:
+        # 1. Community Detection
+        comm_list = await builder.detect_communities(str(document_id))
+        for comm in comm_list:
+            for node_name in comm["nodes"]:
+                communities[node_name] = comm["community_id"]
+        
+        # 2. Layout Positioning (Spring Layout)
+        # We only do this if there are nodes and it's not too large
+        if 0 < nx_graph.number_of_nodes() < 500:
+            try:
+                # Use a simple spring layout as a hint for the frontend
+                pos_dict = nx.spring_layout(nx_graph, k=0.15, iterations=50)
+                positions = {name: {"x": float(p[0]) * 500, "y": float(p[1]) * 500} for name, p in pos_dict.items()}
+            except:
+                pass
+
+    # 3. Load from Database
     repo = GraphRepository(db)
     entities = await repo.get_all_entities(document_id)
     relations = await repo.get_all_relations(document_id)
-
+    
     nodes = [
         GraphNodeView(
             id=e.canonical_name,
+            db_id=str(e.id),
             label=e.canonical_name,
             type=e.entity_type,
-            description=e.description
+            description=e.description,
+            source=e.source,
+            tags=e.tags,
+            file_path=e.file_path,
+            metadata=e.metadata_,
+            community=communities.get(e.canonical_name),
+            x=positions.get(e.canonical_name, {}).get("x"),
+            y=positions.get(e.canonical_name, {}).get("y")
         ) for e in entities
     ]
 
@@ -89,7 +133,10 @@ async def get_document_graph(
 
     return {
         "nodes": nodes,
-        "edges": edges
+        "edges": edges,
+        "stats": {
+            "communities_count": len(comm_list) if 'comm_list' in locals() else 0
+        }
     }
 
 @router.get("/{document_id}/stats")
@@ -114,6 +161,62 @@ async def get_graph_stats(
         "entity_count": e_count,
         "relation_count": r_count
     }
+
+
+@router.get("/{document_id}/centrality")
+async def get_graph_centrality(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get centrality scores (degree, betweenness, closeness) for entities in the document graph.
+    """
+    from ..core.graph_builder import get_graph_builder
+    builder = get_graph_builder()
+    
+    # Load graph from storage
+    success = await builder.load_graph(str(document_id))
+    if not success:
+        # Fallback: maybe the graph hasn't been persisted yet?
+        # In a real scenario, we might want to rebuild it from DB or return 404
+        raise HTTPException(status_code=404, detail="Graph not found for this document")
+
+    scores = await builder.get_centrality_scores(str(document_id))
+    return scores
+
+
+@router.get("/{document_id}/export")
+async def export_graph(
+    document_id: uuid.UUID,
+    format: str = "graphml",
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Export the graph in various formats (graphml, json).
+    """
+    from ..core.graph_builder import get_graph_builder
+    from fastapi.responses import Response, StreamingResponse
+    import io
+    
+    builder = get_graph_builder()
+    success = await builder.load_graph(str(document_id))
+    if not success:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    if format == "graphml":
+        import networkx as nx
+        output = io.StringIO()
+        nx.write_graphml(builder.get_graph(), output)
+        return Response(
+            content=output.getvalue(),
+            media_type="application/xml",
+            headers={"Content-Disposition": f"attachment; filename=graph_{document_id}.graphml"}
+        )
+    elif format == "json":
+        data = builder._graph_to_dict()
+        return data
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported format")
 
 
 # =============================================
@@ -478,4 +581,139 @@ async def get_global_entities(
         "entities": global_entities,
         "total": len(global_entities),
     }
+
+# =============================================
+# Obsidian Integration APIs
+# =============================================
+
+class ObsidianImportRequest(BaseModel):
+    vault_path: str
+
+@router.post("/import/obsidian")
+async def import_obsidian_vault(
+    request: ObsidianImportRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Start a background task to import an Obsidian Vault.
+    Returns the job ID to track progress.
+    """
+    redis_pool = await get_redis_pool()
+    job_id = str(uuid.uuid4())
+    
+    await redis_pool.enqueue_job(
+        "import_obsidian_vault_task",
+        request.vault_path,
+        str(user_id),
+        job_id,
+        _job_id=f"obsidian_import:{job_id}"
+    )
+    
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Obsidian import task has been queued."
+    }
+
+@router.get("/import/obsidian/status/{job_id}")
+async def get_obsidian_import_status(
+    job_id: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    """
+    Check the status of an Obsidian import job.
+    """
+    redis_pool = await get_redis_pool()
+    progress_key = f"import:{job_id}:progress"
+    
+    status_data = await redis_pool.get(progress_key)
+    if not status_data:
+        return {"status": "not_found"}
+    
+    import json
+    try:
+        return json.loads(status_data)
+    except:
+        return {"status": status_data}
+
+# =============================================
+# Backlinks, Tags & Entity Resolution APIs
+# =============================================
+
+@router.get("/entities/{entity_id}/backlinks")
+async def get_entity_backlinks(
+    entity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lấy danh sách các liên kết ngược (incoming relations) của một thực thể.
+    """
+    service = BacklinkService(db)
+    return await service.get_backlinks(entity_id)
+
+@router.get("/tags")
+async def get_all_graph_tags(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lấy danh sách tất cả các thẻ (tags) trong đồ thị tri thức của người dùng.
+    """
+    service = TagService(db)
+    return await service.get_all_tags(user_id)
+
+@router.get("/tags/{tag}/entities")
+async def get_entities_by_tag(
+    tag: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lấy danh sách các thực thể theo thẻ (tag).
+    """
+    service = TagService(db)
+    return await service.get_entities_by_tag(tag, user_id)
+
+@router.get("/duplicates")
+async def get_potential_duplicate_entities(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Tìm kiếm các thực thể có khả năng trùng lặp để người dùng xem xét gộp.
+    """
+    service = EntityResolutionService(db)
+    return await service.get_potential_duplicates(user_id)
+
+class MergeEntitiesRequest(BaseModel):
+    primary_entity_id: uuid.UUID
+    secondary_entity_id: uuid.UUID
+
+@router.post("/entities/merge")
+async def merge_entities(
+    request: MergeEntitiesRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Gộp hai thực thể lại thành một. Toàn bộ quan hệ sẽ được chuyển hướng về thực thể chính.
+    """
+    service = EntityResolutionService(db)
+    try:
+        merged_entity = await service.merge_entities(
+            user_id=user_id,
+            primary_id=request.primary_entity_id,
+            secondary_id=request.secondary_entity_id
+        )
+        await db.commit()
+        return {
+            "status": "success", 
+            "message": f"Thực thể đã được gộp thành công vào '{merged_entity.canonical_name}'",
+            "primary_id": str(merged_entity.id)
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi gộp thực thể: {str(e)}")
 

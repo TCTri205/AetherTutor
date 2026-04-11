@@ -14,6 +14,7 @@ from ..services.chroma_client import chroma_client
 from ..services.embedding_service import embedding_service
 from .entity_extractor import EntityExtractor
 from .retriever import Retriever
+from .graph_builder import get_graph_builder
 from ..constants import (
     CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE, ENTITY_EXTRACTION_BATCH_SIZE
 )
@@ -37,6 +38,7 @@ class LightRAGPipeline(LightRAG):
         self.retriever = retriever
         self.user_id = user_id  # user_id cho multi-tenant isolation trong ChromaDB
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        self.graph_builder = get_graph_builder()
 
     def _calculate_content_hash(self, text: str) -> str:
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -227,6 +229,36 @@ class LightRAGPipeline(LightRAG):
                     metadatas=entity_chroma_metas,
                     embeddings=entity_embeddings if has_valid_entity_embeddings else None,
                 )
+
+            # Bước 4: Cập nhật GraphBuilder và persist
+            try:
+                # Chuyển đổi relation data về format GraphBuilder mong đợi (canonical names)
+                builder_relations = [
+                    {
+                        "source_entity": r.source,
+                        "target_entity": r.target,
+                        "relation_type": r.relation_type,
+                        "description": r.description
+                    } for r in dedup_relations
+                ]
+                # Entity data tương ứng
+                builder_entities = [
+                    {
+                        "canonical_name": e.name,
+                        "entity_type": e.entity_type,
+                        "description": e.description,
+                        "confidence": e.confidence
+                    } for e in dedup_entities
+                ]
+
+                await self.graph_builder.add_entities_and_relations(
+                    builder_entities, 
+                    builder_relations, 
+                    document_id=str(doc_id)
+                )
+                await self.graph_builder.persist_graph(str(doc_id))
+            except Exception as e:
+                logger.error(f"GraphBuilder integration error: {e}")
 
             # Hoàn tất
             await self.doc_repo.update_status(doc_id, DocumentStatus.COMPLETED)

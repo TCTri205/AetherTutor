@@ -288,6 +288,46 @@ Trả về JSON:
         )
 
 
+async def import_obsidian_vault_task(ctx: Any, vault_path: str, user_id_str: str, job_id: str):
+    """
+    ARQ Job: Import Obsidian vault entries into the Knowledge Graph.
+    """
+    user_id = uuid.UUID(user_id_str)
+    
+    async with async_session_factory() as session:
+        from ..services.obsidian_vault_importer import ObsidianVaultImporter
+        
+        importer = ObsidianVaultImporter(session)
+        logger.info(f"Starting Obsidian vault import for user {user_id} from {vault_path}")
+        
+        # Redis pools for progress tracking
+        redis_pool = await get_redis_pool()
+        progress_key = f"import:{job_id}:progress"
+        
+        try:
+            # We don't have built-in progress in ObsidianVaultImporter yet, 
+            # so we just mark as started and then finished.
+            await redis_pool.setex(progress_key, 3600, "processing")
+            
+            result = await importer.import_vault(vault_path, user_id, import_id=job_id)
+            
+            # Save results/completion status
+            import json
+            await redis_pool.setex(progress_key, 3600, json.dumps({
+                "status": "completed",
+                "result": result
+            }))
+            
+            logger.info(f"Finished Obsidian vault import for user {user_id}: {result}")
+            
+        except Exception as e:
+            logger.exception(f"Failed to import Obsidian vault for user {user_id}: {e}")
+            await redis_pool.setex(progress_key, 3600, json.dumps({
+                "status": "failed",
+                "error": str(e)
+            }))
+            raise e
+
 # Cấu hình ARQ Worker
 from arq.cron import CronJob
 
@@ -296,6 +336,7 @@ class WorkerSettings:
         process_document_task,
         sm2_daily_digest_task,
         quiz_feedback_analysis_task,
+        import_obsidian_vault_task,
     ]
     cron_jobs = [
         CronJob(

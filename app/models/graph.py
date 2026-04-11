@@ -1,8 +1,9 @@
 import uuid
+from typing import Optional
 from sqlalchemy import (
-    String, Text, Integer, Float, ForeignKey, UniqueConstraint, Index
+    String, Text, Integer, Float, ForeignKey, UniqueConstraint, Index, Boolean
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
 
@@ -38,9 +39,16 @@ class GraphEntity(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
 
+    # Obsidian Integration columns
+    source: Mapped[str] = mapped_column(String(50), default="ai_extracted", index=True)
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), default=[], server_default="{}")
+    file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, server_default="{}")
+
     __table_args__ = (
         UniqueConstraint("document_id", "canonical_name"),
         Index("idx_graph_entities_user_id", "user_id"),
+        Index("idx_graph_entities_tags", "tags", postgresql_using="gin"),
     )
 
 
@@ -65,6 +73,11 @@ class GraphRelation(Base, TimestampMixin):
     )
     relation_type: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Obsidian Integration columns
+    source: Mapped[str] = mapped_column(String(50), default="ai_extracted", index=True)
+    is_backlink: Mapped[bool] = mapped_column(Boolean, default=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, server_default="{}")
 
     __table_args__ = (
         UniqueConstraint(
