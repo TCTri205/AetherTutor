@@ -25,6 +25,18 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting AetherTutor application...")
+
+    # Security: refuse to start with weak JWT secret in production
+    if settings.APP_ENV == "production" and settings.is_weak_jwt_secret:
+        raise RuntimeError(
+            "Refusing to start with default JWT secret in production. "
+            "Set JWT_SECRET_KEY in .env to a strong random value."
+        )
+    if settings.APP_ENV == "development" and settings.is_weak_jwt_secret:
+        logger.warning(
+            "SECURITY: Using default JWT secret. Set JWT_SECRET_KEY in production!"
+        )
+
     app.state.arq_pool = await get_redis_pool()
     logger.info("ARQ Redis pool initialized")
     yield

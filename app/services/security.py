@@ -58,7 +58,12 @@ def create_refresh_token(user_id: str, expires_delta: timedelta | None = None) -
 def decode_token(token: str) -> dict[str, Any]:
     """Giải mã và validate JWT token."""
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(
+            token,
+            settings.JWT_SECRET_KEY,
+            algorithms=["HS256"],
+            leeway=30,  # ±30 giây clock skew tolerance
+        )
         return payload
     except jwt.ExpiredSignatureError:
         raise ValueError("Token has expired")

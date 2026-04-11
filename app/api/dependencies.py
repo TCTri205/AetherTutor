@@ -14,22 +14,15 @@ import uuid
 from fastapi import Header, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from loguru import logger
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.security import decode_token
 from app.config import settings
-from app.database import get_db as get_db_session
+from app.database import get_db
 
 # Default user UUID (khớp với migration 1)
 DEFAULT_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 security = HTTPBearer(auto_error=False)  # auto_error=False để optional
-
-
-async def get_db():
-    """Dependency để lấy AsyncSession."""
-    async with get_db_session() as session:
-        yield session
 
 
 async def get_current_user_id(
@@ -72,12 +65,21 @@ async def get_current_user_id(
                 detail=f"Invalid JWT token: {e}",
             )
 
-    # Priority 2: X-User-Id header (backward compat)
+    # Priority 2: X-User-Id header (development ONLY — deprecated)
     if x_user_id:
+        if settings.APP_ENV != "development":
+            logger.critical(
+                f"SECURITY: X-User-Id header rejected in {settings.APP_ENV} mode. "
+                f"Impersonation attempt from IP. Header value: {x_user_id}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="X-User-Id header is only allowed in development mode",
+            )
         try:
             user_id = uuid.UUID(x_user_id)
             logger.warning(
-                f"Authenticated via X-User-Id header (deprecated): {user_id}"
+                f"Authenticated via X-User-Id header (dev-only, deprecated): {user_id}"
             )
             return user_id
         except ValueError:
@@ -106,17 +108,27 @@ async def get_optional_user_id(
 
     Trả về None nếu không có auth, không fallback.
     Phù hợp cho endpoints công khai nhưng có thể có auth.
+
+    Security: Chỉ chấp nhận X-User-Id ở dev mode, và kiểm tra token type "access".
     """
     # Try JWT first
     if credentials:
         try:
             payload = decode_token(credentials.credentials)
+            if payload.get("type") != "access":
+                logger.debug("Optional auth: rejected non-access token type")
+                return None
             return uuid.UUID(payload["sub"])
         except ValueError:
             pass
 
-    # Try header
+    # Try header (dev only)
     if x_user_id:
+        if settings.APP_ENV != "development":
+            logger.critical(
+                f"SECURITY: X-User-Id header rejected in {settings.APP_ENV} mode (optional auth)"
+            )
+            return None
         try:
             return uuid.UUID(x_user_id)
         except ValueError:

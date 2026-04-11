@@ -1,6 +1,9 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+# Default JWT secret — must be changed in production
+DEFAULT_JWT_SECRET = "your-secret-key-change-in-production"
+
 class Settings(BaseSettings):
     # App Settings
     PROJECT_NAME: str = "AetherTutor"
@@ -88,6 +91,11 @@ class Settings(BaseSettings):
         if not self.ALLOWED_ORIGINS:
             return [self.FRONTEND_URL]
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+
+    @property
+    def is_weak_jwt_secret(self) -> bool:
+        """Check if JWT secret is still the default value."""
+        return self.JWT_SECRET_KEY == DEFAULT_JWT_SECRET
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -78,12 +78,16 @@ async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, Non
     Fixture cho httpx AsyncClient.
     Override dependency get_db để dùng test_db.
     Mock arq_pool để không cần Redis thật khi test API.
+    Disable rate limiting to avoid 429 between test runs.
     """
-    from unittest.mock import AsyncMock, patch
-    
+    from unittest.mock import AsyncMock
+
     mock_pool = AsyncMock()
     mock_pool.enqueue_job = AsyncMock(return_value=None)
     app.state.arq_pool = mock_pool
+
+    # Disable rate limiting for tests
+    app.state.limiter.enabled = False
 
     def override_get_db():
         yield test_db
@@ -97,6 +101,7 @@ async def async_client(test_db: AsyncSession) -> AsyncGenerator[AsyncClient, Non
         yield client
 
     app.dependency_overrides.clear()
+    app.state.limiter.enabled = True
 
 # --- LLM Mocking Fixture ---
 

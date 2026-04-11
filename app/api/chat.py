@@ -95,9 +95,19 @@ async def chat_stream(
             retriever = Retriever(graph_repo)
 
             # Extract and validate user_id from request header
+            # Security: Only accepted in development mode (matches dependencies.py policy)
+            from ..config import settings
+
             raw_user_id = request.headers.get("X-User-Id")
             user_id: str | None = None
             if raw_user_id:
+                if settings.APP_ENV != "development":
+                    from loguru import logger
+                    logger.critical(
+                        f"SECURITY: X-User-Id header rejected in {settings.APP_ENV} mode (chat stream)"
+                    )
+                    yield f"event: error\ndata: {json.dumps({'detail': 'X-User-Id header is only allowed in development mode', 'code': 'DEV_AUTH_ONLY'})}\n\n"
+                    return
                 try:
                     uuid.UUID(raw_user_id)
                     user_id = raw_user_id
