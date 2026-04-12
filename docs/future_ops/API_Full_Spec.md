@@ -1,12 +1,17 @@
-# API Specifications
+# ⚠️ DEPRECATED — API Specifications (Pre-LightRAG)
 
-> [!WARNING]
-> **Tài liệu này cần được cập nhật cho LightRAG!**
-> Đây là tài liệu future_ops được viết trước khi tích hợp LightRAG. 
-> Các endpoints trong tài liệu này dựa trên kiến trúc RAG truyền thống (Vector DB).
-> Vui lòng tham khảo [`../API_Specifications.md`](../API_Specifications.md) để xem các LightRAG endpoints đã được cập nhật.
-> 
-> **Cần cập nhật:** Thêm các endpoints cho LightRAG graph querying, entity management, và relation endpoints.
+> [!CAUTION]
+> **🚫 TÀI LIỆU NÀY ĐÃ LỖI THỜI — KHÔNG SỬ DỤNG CHO DEVELOPMENT!**
+>
+> - Được viết **trước khi tích hợp LightRAG**, dựa trên kiến trúc RAG truyền thống (Vector DB only).
+> - Các endpoints trong đây **KHÔNG phản ánh đúng** implementation hiện tại.
+> - **KHÔNG** dùng file này để prompt AI coding.
+>
+> **✅ THAM KHẢO ĐÚNG:** [`../core/API_Specifications.md`](../core/API_Specifications.md) — Đã cập nhật cho LightRAG.
+
+---
+
+# API Specifications (Legacy)
 
 Tài liệu này định nghĩa chi tiết tất cả API endpoints của AetherTutor theo chuẩn OpenAPI 3.0.
 

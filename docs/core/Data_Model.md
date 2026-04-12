@@ -553,6 +553,12 @@ CREATE INDEX idx_quiz_answers_result ON quiz_answers(quiz_result_id);
 
 ### 2.11 API Usage & Rate Limiting Table
 
+> [!WARNING]
+> **⚠️ POST-MVP — NOT IMPLEMENTED YET**
+> Các bảng `api_usage_logs` và `user_quota_limits` thuộc **Post-MVP (multi-user)** scope.
+> MVP hiện tại là single-user local, chưa cần rate limiting hay quota tracking.
+> **Tracking Issue:** [BR-012](../srs/Business_Rules.md#br-012-rate-limiting--quota-)
+
 ```sql
 CREATE TABLE api_usage_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

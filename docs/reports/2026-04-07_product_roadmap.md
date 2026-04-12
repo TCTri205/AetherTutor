@@ -1,8 +1,8 @@
 # Lộ Trình Phát Triển (Roadmap)
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 7, 2026
-> **Status:** LAUNCHED (MVP Sprint 6 Complete — Ready for Production deployment)
+> **Last Updated:** April 12, 2026
+> **Status:** Stage 4 Phase 1 Complete — UI Polish + Security Foundation
 
 ---
 
@@ -38,22 +38,26 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 ## 3. Stage 3 (Visualization): Trực quan hóa & Multimedia
 
 > Thời điểm dự kiến: Quý 3 - 2026 | Mục tiêu: Mở rộng khả năng xử lý hình ảnh và video.
+> **Trạng thái:** ✅ **CORE COMPLETE** (Sprint 8 + Sprint 9 — 20/20 tasks, 38 tests passing)
 
-- [ ] Hoàn thiện **Visualizer Agent** với khả năng render **Mermaid.js** song hướng từ LightRAG graph.
-- [ ] Triển khai **Media Microlearning Pipeline** (Xử lý Video/Audio tự động).
-- [ ] Ra mắt tính năng **Source Code Visualizer** dành riêng cho lập trình viên.
-- [ ] Tích hợp chỉnh sửa Mindmap/Flowchart trực tiếp trên UI.
-- [ ] Interactive graph editing capabilities.
+- [x] Hoàn thiện **Visualizer Agent** với khả năng render **Mermaid.js** từ LightRAG graph (Sprint 8).
+- [ ] Triển khai **Media Microlearning Pipeline** (Xử lý Video/Audio tự động) — **DEFERRED → Stage 5**.
+- [x] Tích hợp MermaidDiagram component vào Chat (Sprint 8).
+- [x] Topic/Session organization (Sprint 9 — Migration, Redis cache, API endpoints).
+- [ ] Interactive graph editing capabilities — **DEFERRED → Stage 5 Sprint 21**.
+- [ ] Source Code Visualizer — **DEFERRED → Stage 4 Sprint 13**.
 
 ## 4. Stage 4 (Interactive UX): Nâng cấp trải nghiệm & Cộng đồng
 
 > Thời điểm dự kiến: Quý 4 - 2026 | Mục tiêu: Tối ưu hóa trải nghiệm người dùng và hỗ trợ làm việc nhóm.
+> **Trạng thái:** 🟡 **PHASE 1 COMPLETE** (Sprint 14 + Sprint 19 — 24/80 tasks). Phase 2-3 pending.
 
-- [ ] Nâng cấp UI toàn diện (Rich Aesthetics) với các hiệu ứng tương tác cao cấp.
-- [ ] Hỗ trợ làm việc chung (Collaborative Learning) qua WebSockets.
-- [ ] Mở rộng hệ sinh thái các Agent chuyên biệt theo yêu cầu người dùng (Language Agent, Math Agent).
-- [ ] Ra mắt ứng dụng Mobile (PWA/Native) để học tập mọi lúc mọi nơi.
-- [ ] Shared knowledge graphs cho team learning.
+- [x] **Phase 1 Complete:** UI Polish (Dark Mode, Keyboard Shortcuts, Loading Skeletons) + Security (Email Verification, Password Reset, Sentry) — Sprint 14 + 19.
+- [ ] Source Code Visualizer — Sprint 13 (Backend done, Frontend pending).
+- [ ] Hỗ trợ làm việc chung (Collaborative Learning) qua WebSockets — Sprint 15 (pending).
+- [ ] Specialized Agents (Language, Math) — Sprint 16 (pending).
+- [ ] PWA & Mobile — Sprint 18 (pending).
+- [ ] Media Microlearning — Sprint 17 (DEFERRED → Stage 5).
 
 ---
 
@@ -65,8 +69,21 @@ Tài liệu này theo dõi lộ trình phát triển của AetherTutor từ giai
 | **v0.1 (MVP)** | LightRAG core + Chat đa luồng/Streaming + Full Frontend UI | 100% ✅ |
 | **v0.1.1 (Refactoring)** | Code quality, performance, testing (+155% tests), production-ready | 100% ✅ |
 | **v0.2 (Pro)** | Intelligence + SM-2 + Flashcards + Zettelkasten | 100% ✅ |
-| **v0.3 (Ecosystem)** | Multi-document + Collaborative graphs | 0% |
-| **v1.0 (Public)** | Full feature set + Mobile app | 0% |
+| **v0.3 (Visualization)** | Visualizer Agent + Mermaid + Topic organization | 100% ✅ (Core) |
+| **v0.4 (Interactive UX)** | Dark Mode + Security + Collaboration + PWA | 30% 🔄 (Phase 1 done) |
+| **v1.0 (Public)** | Full feature set + Media + Launch ready | 0% |
+
+---
+
+## Mapping: Stage → Version
+
+| Stage | Version | Mô tả | Trạng thái |
+| :--- | :--- | :--- | :--- |
+| Stage 1 | v0.1 | MVP — LightRAG Core + Chat | ✅ Complete |
+| Stage 2 | v0.2 | Intelligence — SM-2 + Flashcards + Zettelkasten | ✅ Complete |
+| Stage 3 | v0.3 | Visualization — Mermaid + Topics | ✅ Core Complete |
+| Stage 4 | v0.4 | Interactive UX — Dark Mode + Collaboration + PWA | 🔄 Phase 1 Complete |
+| Stage 5 | v1.0 | Launch Ready — Media + Testing + Polish | ⏸️ Pending |
 
 ---
 

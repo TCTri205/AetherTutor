@@ -35,8 +35,9 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 | :--- | :--- |
 | [**Architecture.md**](core/Architecture.md) | Sơ đồ luồng, Agent orchestration và giao thức MCP. |
 | [**Technical_Spec.md**](core/Technical_Spec.md) | Tech Stack, kiến trúc tổng thể và các AI Pipeline logic cốt lõi. |
-| [**API_Specifications.md**](core/API_Specifications.md) | Đặc tả chi tiết các REST Endpoints. |
-| [**Data_Model.md**](core/Data_Model.md) | Thiết kế Schema DB, Vector Store và Graph Storage. |
+| [**Service_Catalog.md**](core/Service_Catalog.md) | 🆕 **25 backend services** — Methods, dependencies, business rules, error handling. |
+| [**API_Specifications.md**](core/API_Specifications.md) | Đặc tả chi tiết 115 REST Endpoints. |
+| [**Data_Model.md**](core/Data_Model.md) | Thiết kế Schema DB (26 tables), Vector Store và Graph Storage. |
 | [**Database.md**](core/Database.md) | Hạ tầng cơ sở dữ liệu (Docker, Resource Optimization, Connection). |
 | [**Features.md**](core/Features.md) | Danh sách tính năng và trụ cột chức năng. |
 
@@ -57,7 +58,7 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 | Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
 | [**SRS_Overview.md**](srs/SRS_Overview.md) | Tổng quan hệ thống, scope MVP, business rules summary, module dependencies map. |
-| [**Business_Rules.md**](srs/Business_Rules.md) | **15 luật chơi bất biến** (🔴 BẤT BIẾN, 🟡 CỐ ĐỊNH, 🟢 KHUYẾN NGHỊ). |
+| [**Business_Rules.md**](srs/Business_Rules.md) | **17 luật chơi bất biến** (🔴 BẤT BIẾN, 🟡 CỐ ĐỊNH, 🟢 KHUYẾN NGHỊ). |
 | [**User_Flows.md**](srs/User_Flows.md) | **8 end-to-end user flows** với mermaid diagrams, input/output, error handling. |
 | [**Module_Contracts.md**](srs/Module_Contracts.md) | **10 module contracts** — interface definitions, input/output contracts, error contracts. |
 
@@ -69,7 +70,10 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 | :--- | :--- |
 | [**MVP_Implementation_Plan.md**](plans/2026-04-08_mvp_implementation_lightrag.md) | Checklist thực thi Stage 1 (MVP), các Sprint 1-6 và Timeline chi tiết. |
 | [**Stage2_Implementation_Plan.md**](plans/2026-04-08_stage2_intelligence_memory.md) | Kế hoạch Stage 2 — Intelligence & Memory (10 tuần). |
-| [**implementation_plan.md**](plans/2026-04-08_audit_findings_implementation_plan.md) | Audit findings & polish plan cho Final Polish. |
+| [**Stage3_Implementation_Plan.md**](plans/2026-04-10_hybrid_entity_extraction.md) | Hybrid Entity Extraction + Obsidian Integration. |
+| [**Stage4_Implementation_Plan.md**](plans/2026-04-12_stage4_interactive_ux_collaboration.md) | Interactive UX, Collaboration, PWA, Security (Phase 1 done). |
+| [**Stage5_Implementation_Plan.md**](plans/2026-04-12_stage5_intelligence_maturity_launch.md) | Intelligence Maturity & Launch Prep (Draft). |
+| [**Audit_Findings_Plan.md**](plans/2026-04-08_audit_findings_implementation_plan.md) | Audit findings & polish plan cho Final Polish. |
 
 ### 📊 Báo cáo & Lộ trình (`reports/`)
 
@@ -77,10 +81,12 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 
 | Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
-| [**Roadmap.md**](reports/2026-04-07_product_roadmap.md) | Tầm nhìn dài hạn, cột mốc quan trọng (Milestones) và Success Criteria. |
-| [**PHASE5_COMPLETION.md**](reports/2026-04-09_stage2_completion.md) | Báo cáo hoàn thành Sprint 5 — Frontend Interface. |
-| [**REFACTORING.md**](reports/2026-04-08_refactoring_log.md) | Báo cáo refactoring v0.1.1 — Code quality, performance, testing. |
-| [**LAUNCH_CHECKLIST.md**](reports/2026-04-07_mvp_launch_checklist.md) | Checklist kiểm tra trước khi launch MVP v0.1. |
+| [**Roadmap.md**](2026-04-07_product_roadmap.md) | Tầm nhìn dài hạn, cột mốc quan trọng (Milestones) và Success Criteria. |
+| [**Stage2_Completion.md**](2026-04-09_stage2_completion.md) | Báo cáo hoàn thành Sprint 5 — Frontend Interface. |
+| [**Refactoring_Log.md**](2026-04-08_refactoring_log.md) | Báo cáo refactoring v0.1.1 — Code quality, performance, testing. |
+| [**Stage3_Final_Summary.md**](2026-04-12_stage3_final_summary.md) | Stage 3 Core Complete (Sprint 8+9). |
+| [**Stage4_Phase1_Report.md**](2026-04-12_stage4_phase1_implementation_report.md) | Stage 4 Phase 1 Complete (Sprint 14+19). |
+| [**LAUNCH_CHECKLIST.md**](2026-04-07_mvp_launch_checklist.md) | Checklist kiểm tra trước khi launch MVP v0.1. |
 
 ### 🧪 Kiểm thử (`testing/`)
 
@@ -97,12 +103,20 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 
 | Tài liệu | Trách nhiệm chính |
 | :--- | :--- |
-| [**API_Full_Spec.md**](future_ops/API_Full_Spec.md) | Đặc tả API đầy đủ (post-MVP). |
+| [**API_Full_Spec.md**](future_ops/API_Full_Spec.md) | ⚠️ **DEPRECATED** — Xem [`core/API_Specifications.md`](core/API_Specifications.md) cho LightRAG endpoints. |
 | [**Deployment_Architecture.md**](future_ops/Deployment_Architecture.md) | Kiến trúc triển khai production. |
 | [**Monitoring_Observability.md**](future_ops/Monitoring_Observability.md) | Chiến lược monitoring và observability. |
 | [**Risk_Assessment.md**](future_ops/Risk_Assessment.md) | Đánh giá rủi ro và mitigation strategies. |
 | [**Security_Privacy.md**](future_ops/Security_Privacy.md) | Chính sách bảo mật và privacy compliance. |
 | [**Testing_Strategy.md**](future_ops/Testing_Strategy.md) | Chiến lược kiểm thử tổng thể. |
+
+### ⚙️ Vận hành (`ops/`)
+
+> Runbooks và operational guides.
+
+| Tài liệu | Trách nhiệm chính |
+| :--- | :--- |
+| [**Worker_Runbook.md**](ops/Worker_Runbook.md) | 🆕 ARQ Worker configuration, task registry, error handling, monitoring, deployment. |
 
 ### 🤝 Hướng dẫn Đóng góp
 
@@ -120,10 +134,10 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 - 🚀 **New to AetherTutor?** → Đọc [Features.md](core/Features.md) để hiểu tính năng
 - 🏗️ **Want to understand architecture?** → Đọc [Architecture.md](core/Architecture.md)
 - 📝 **Ready to code with AI?** → Đọc bộ [SRS](srs/SRS_Overview.md) TRƯỚC KHI prompt AI
-- 💻 **Ready to develop?** → Xem [MVP_Implementation_Plan.md](plans/MVP_Implementation_Plan.md)
+- 💻 **Ready to develop?** → Xem [Stage 1 Plan](plans/2026-04-08_mvp_implementation_lightrag.md) | [Stage 4 Plan](plans/2026-04-12_stage4_interactive_ux_collaboration.md)
 
 ### Dành cho Developers
-- 📐 **Tech Stack** → [Technical_Spec.md](core/Technical_Spec.md)
+- 📐 **Tech Stack** → [Technical_Spec.md](core/Technical_Spec.md) *(coming soon)*
 - 📝 **SRS (AI Coding)** → [srs/](srs/) — Business Rules, User Flows, Module Contracts
 - 🔌 **API Reference** → [API_Specifications.md](core/API_Specifications.md)
 - 🗄️ **Database Setup** → [Database.md](core/Database.md)
@@ -138,6 +152,10 @@ AetherTutor sử dụng **Ma trận Trách nhiệm Tài liệu** để đảm b�
 - 📊 **Roadmap** → [reports/2026-04-07_product_roadmap.md](reports/2026-04-07_product_roadmap.md)
 - 📋 **Sprint Plans** → [plans/](plans/)
 - 📈 **Completion Reports** → [reports/](reports/)
+
+> [!NOTE]
+> **Stage Progression:** Stage 1-2 ✅ | Stage 3 Core ✅ | Stage 4 Phase 1 ✅ | Stage 4 Phase 2-3 ⏸️ | Stage 5 ⏸️
+> Xem [Stage→Version Mapping](reports/2026-04-07_product_roadmap.md#mapping-stage--version) trong Roadmap.
 
 ---
 © 2026 AetherTutor Team. Dự án đang trong giai đoạn R&D tập trung vào lõi Algorithm và UX.

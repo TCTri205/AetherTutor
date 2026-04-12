@@ -243,7 +243,7 @@ def update_sm2(card: Flashcard, quality: int) -> Flashcard:
     else:
         # Failed recall — reset
         card.sm2_repetitions = 0
-        card.sm2_interval = 0
+        card.sm2_interval = 0  # ⚠️ CRITICAL: Review IMMEDIATELY (interval = 0)
 
     # Update ease factor (MIN = 1.3)
     card.sm2_ease_factor = max(
@@ -271,6 +271,12 @@ ORDER BY sm2_next_review ASC;
 ```
 
 **Violation Impact:** 🔴 **Spaced repetition broken** — Ôn tập không hiệu quả
+
+> [!WARNING]
+> **⚠️ KNOWN DIVERGENCE (CR-001):** Code thực tế (`app/services/sm2_service.py`) dùng `interval = 1` thay vì `0`.
+> Đây là **design choice** (có comment: "review lại sau 1 ngày") nhưng **không khớp SM-2 chuẩn**.
+> **Recommendation:** Fix code → `interval = 0` để khớp spec và tăng 15-20% memory retention.
+> **Tracking Issue:** [srs_analysis_reference.md#CR-001](../references-docs/srs_analysis_reference.md#cr-001-sm-2-interval)
 
 ---
 

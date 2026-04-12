@@ -1,17 +1,22 @@
-# Stage 4 COMPLETE REPORT: Interactive UX, Collaboration & Ecosystem
+# Stage 4 PROGRESS REPORT: Interactive UX, Collaboration & Ecosystem
 
 > **Date:** 2026-04-12
 > **Author:** AetherTutor Team
-> **Status:** ✅ FULLY COMPLETED — All Sprints (13, 14, 15, 16, 17*, 18, 19)
+> **Status:** 🟡 **PHASE 1 COMPLETE** (Sprint 14 + Sprint 19). Phase 2-3 (Sprint 13, 15, 16, 18) pending. Sprint 17 deferred to Stage 5.
 > **Parent:** [Stage 4 Plan](../plans/2026-04-12_stage4_interactive_ux_collaboration.md)
+
+> [!WARNING]
+> **⚠️ Document Scope:** Report này originally covered Phase 1 completion (Sprint 14 + 19).
+> Các Sprint 13, 15, 16, 18 **CHƯA hoàn thành** — đang pending. Sprint 17 đã defer sang Stage 5.
+> **Stage 4 tổng thể: ~30% complete** (24/80 tasks). Xem [Roadmap](2026-04-07_product_roadmap.md) để có bức tranh tổng thể.
 
 ---
 
 ## Executive Summary
 
-**Stage 4 đã hoàn thành 100%** với đầy đủ 7 Sprints theo kế hoạch. Đây là giai đoạn phát triển lớn nhất trong lịch sử AetherTutor, biến ứng dụng từ công cụ học tập đơn lẻ thành **nền tảng collaboration real-time với AI agents chuyên biệt, PWA offline support, và hệ sinh thái mở rộng**.
+**Stage 4 Phase 1 đã hoàn thành** với Sprint 14 (UI Polish & Dark Mode) và Sprint 19 (Security & Observability). Đây là nền tảng quan trọng cho giai đoạn phát triển tiếp theo của AetherTutor.
 
-### Final Metrics
+### Phase 1 Metrics
 
 | Metric | Stage 3 End | Stage 4 Final | Delta | % Growth |
 |--------|------------|---------------|-------|----------|
@@ -375,29 +380,37 @@
 
 ## Conclusion
 
-**Stage 4 đã biến AetherTutor thành nền tảng học tập thông minh toàn diện:**
+**Stage 4 Phase 1 đã thiết lập nền tảng vững chắc cho AetherTutor:**
 
 ✅ **UI/UX** — Dark mode, keyboard shortcuts, animations, accessibility
 ✅ **Security** — Email verification, password reset, ownership validation, Sentry
-✅ **Code Intelligence** — Python AST + JS/TS parser, graph visualization
-✅ **AI Agents** — Language Learning + Math Tutoring với specialized UI
-✅ **Collaboration** — WebSocket real-time, teams, shared resources, presence
-✅ **PWA** — Offline support, install prompt, push notifications
-✅ **Infrastructure** — 6 migrations, 18 models, 127 API endpoints
+✅ **Infrastructure** — 4 migrations, 15 models, 93 API endpoints
+✅ **Testing** — ~110 tests passing (+33% from Stage 3)
 
-**Tổng kết:**
-- **59 files mới** (~12,550 LOC)
-- **40 API endpoints mới** (+46%)
-- **6 database migrations**
-- **4 AI agents** (2 builtin + 2 từ Stage 3)
-- **~96 tests mới** (+33%)
-- **7 sprints** (6 completed + 1 optional deferred)
+**Phase 1 tổng kết:**
+- **22 files mới** (~4,500 LOC)
+- **6 API endpoints mới**
+- **4 database migrations**
+- **2 sprints completed** (Sprint 14 + Sprint 19)
 
-**Stage 4 Status: ✅ FULLY COMPLETED**
+**⚠️ Lưu ý:** Các metrics lớn (59 files, 12,550 LOC, 127 endpoints) trong bản gốc là **projections** cho toàn bộ Stage 4, không phải thực tế đã implement. Thực tế Phase 1 đạt ~22 files, ~4,500 LOC.
+
+### Stage 4 Remaining Work
+
+| Sprint | Tasks | Status | Priority |
+|--------|-------|--------|----------|
+| **13** | Source Code Visualizer (Frontend) | ⏸️ Pending | P1 |
+| **15** | Real-time Collaboration (WebSocket, Teams) | ⏸️ Pending | P0 |
+| **16** | Specialized Agents (Language, Math) | ⏸️ Pending | P1 |
+| **18** | PWA & Mobile | ⏸️ Pending | P1 |
+| **17** | Media Microlearning | ❌ Deferred → Stage 5 | P2 |
+
+**Stage 4 tổng thể: ~30% complete** (24/80 tasks). Xem [Stage 4 Plan](../plans/2026-04-12_stage4_interactive_ux_collaboration.md) để biết chi tiết.
 
 ---
 
 © 2026 AetherTutor Team
-*Stage 4 Final Complete Report — Generated 2026-04-12*
-*All Sprints Complete: 13, 14, 15, 16, 18, 19 (Sprint 17 deferred as optional)*
-*Next: Stage 5 Planning hoặc Deferred Items Implementation*
+*Stage 4 Phase 1 Complete Report — Generated 2026-04-12*
+*Phase 1 Complete: Sprint 14 (UI Polish) + Sprint 19 (Security)*
+*Remaining: Sprint 13, 15, 16, 18 (pending). Sprint 17 deferred to Stage 5.*
+*Next: Stage 4 Phase 2 — Sprint 13 + Sprint 16 song song*
