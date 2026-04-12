@@ -390,6 +390,12 @@ Khi user switch Embedding Provider (openai ↔ ollama):
        - Merge results từ các collections
        - Collections khác dimension → SKIP (tránh crash)
 
+    5. ⚠️ CRITICAL — Delete Document phải xóa TẤT CẢ collections:
+       - Khi xóa document, PHẢI quét toàn bộ collections trong ChromaDB
+       - Xóa document_id trên MỌI collection (kể cả collections cũ từ provider khác)
+       - Nếu KHÔNG, orphan vectors sẽ tồn tại vĩnh viễn ở collections cũ
+       - Implementation: `client.list_collections()` → loop → `col.delete(where={"document_id": doc_id})`
+
 ⚠️ KHÔNG BAO GIỜ chèn vector khác dimension vào cùng collection.
    Sẽ gây ValueError: "dimension mismatch" và crash hệ thống.
 ```
@@ -479,17 +485,17 @@ THEN:
 | PDF text layer | Must have text layer | 400 | "Không đọc được text. Cần PDF có text layer." |
 | URL accessible | HTTP 200 response | 400 | "Không truy cập được URL này." |
 | User quota | Daily limit not exceeded | 429 | "Vượt giới hạn upload trong ngày. Nâng cấp để thêm." |
-| **Concurrent processing** | **User KHÔNG có document nào đang `pending`, `processing`, `chunking`, `entity_extraction`, `graph_construction`, `embedding_generation`, `vector_storage`** | **409** | **"Document khác đang xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."** |
+| **Concurrent processing** | **User KHÔNG có document nào đang `PENDING` hoặc `PROCESSING` (BR-002 dual-field: status macro)** | **409** | **"Document khác đang xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."** |
 
 **Concurrent Processing Rule (CRITICAL — Queue Overload Prevention):**
 ```
+⚠️ BR-002 Dual-Field: CHỈ check field `status` (4 macro states), KHÔNG check `processing_step`.
+
 TRƯỚC KHI chấp nhận upload mới:
-    existing = SELECT COUNT(*) FROM documents 
-               WHERE user_id = :user_id 
-               AND status IN ('pending', 'processing', 'chunking', 
-                              'entity_extraction', 'graph_construction', 
-                              'embedding_generation', 'vector_storage')
-    
+    existing = SELECT COUNT(*) FROM documents
+               WHERE user_id = :user_id
+               AND status IN ('PENDING', 'PROCESSING')
+
     IF existing > 0:
         RETURN 409 CONCURRENT_PROCESSING
         ← CHẶN upload, KHÔNG queue task mới

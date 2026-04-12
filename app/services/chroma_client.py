@@ -236,13 +236,53 @@ class ChromaClient:
         )
 
     def delete_by_document_id(self, document_id: str):
-        """Xóa toàn bộ chunks và entities liên quan đến document_id trong ChromaDB."""
+        """
+        Xóa toàn bộ chunks và entities liên quan đến document_id trong ChromaDB.
+
+        ⚠️ BR-008 Multi-Collection Delete:
+        Khi user đổi embedding provider (OpenAI ↔ Ollama), collection mới được tạo.
+        Document có thể có embeddings ở NHIỀU collections khác nhau.
+        PHẢI xóa ở TẤT CẢ collections để tránh orphan vectors.
+
+        Strategy:
+            1. Xóa trên collections hiện tại (chunks_collection, entities_collection)
+            2. Liệt kê TẤT CẢ collections trong ChromaDB
+            3. Xóa document_id trên mọi collection có metadata chứa document_id này
+        """
+        errors = []
+
+        # 1. Xóa trên collections hiện tại (ưu tiên)
         try:
             self.chunks_collection.delete(where={"document_id": str(document_id)})
+        except Exception as e:
+            errors.append(f"chunks_collection: {e}")
+
+        try:
             self.entities_collection.delete(where={"document_id": str(document_id)})
         except Exception as e:
-            logger.error(f"Failed to delete document {document_id} from ChromaDB: {e}")
-            raise
+            errors.append(f"entities_collection: {e}")
+
+        # 2. Quét TẤT CẢ collections trong ChromaDB để tìm collections cũ
+        try:
+            all_collections = self.client.list_collections()
+            current_names = {
+                self.chunks_collection.name,
+                self.entities_collection.name,
+            }
+            for col_name in all_collections:
+                if col_name not in current_names:
+                    try:
+                        col = self.client.get_collection(col_name)
+                        col.delete(where={"document_id": str(document_id)})
+                        logger.info(f"Deleted document {document_id} from old collection: {col_name}")
+                    except Exception:
+                        pass  # Bỏ qua collections không liên quan
+        except Exception as e:
+            errors.append(f"list_collections: {e}")
+
+        if errors:
+            logger.error(f"ChromaDB delete errors for document {document_id}: {errors}")
+            # Không raise — cố gắng xóa nhiều nhất có thể
 
     def reset_cache(self):
         """Reset collection cache (useful for testing or reconnection)."""

@@ -238,12 +238,40 @@ class GraphRepository(BaseRepository[GraphEntity]):
         return {row.canonical_name: row.entity_type for row in rows}
 
     async def delete_by_document_id(self, document_id: uuid.UUID):
-        await self.session.execute(
-            delete(GraphEntity).where(GraphEntity.document_id == document_id)
-        )
+        """
+        Xóa dữ liệu graph liên quan đến document — AN TOÀN cho cross-document entities.
+
+        ⚠️ CRITICAL — Entity-Document Many-to-Many (junction table):
+        Entities có thể được chia sẻ giữa nhiều documents qua entity_documents.
+        KHÔNG được xóa trực tiếp graph_entities theo document_id.
+
+        Thứ tự xóa:
+            1. Xóa graph_relations của document này
+            2. Xóa junction records (entity_documents) của document này
+            3. Cleanup orphan entities — entities không còn document nào link tới
+        """
+        from ..models.entity_document import EntityDocument
+
+        # 1. Xóa relations của document này
         await self.session.execute(
             delete(GraphRelation).where(GraphRelation.document_id == document_id)
         )
+
+        # 2. Xóa junction records — unlink document khỏi entities
+        await self.session.execute(
+            delete(EntityDocument).where(EntityDocument.document_id == document_id)
+        )
+
+        # 3. Cleanup orphan entities — entities không còn document nào link tới
+        orphan_cleanup = (
+            delete(GraphEntity).where(
+                GraphEntity.id.notin_(
+                    select(EntityDocument.entity_id).distinct()
+                )
+            )
+        )
+        await self.session.execute(orphan_cleanup)
+
         await self.session.flush()
 
     async def migrate_relations(self, old_entity_id: uuid.UUID, new_entity_id: uuid.UUID):

@@ -114,10 +114,12 @@ interface GetDocumentStatusResponse {
   success: true;
   data: {
     document_id: string;
-    status: 'pending' | 'processing' | 'chunking' | 'entity_extraction' |
-            'graph_construction' | 'embedding_generation' | 'vector_storage' | 'completed' | 'failed';
-    progress?: number;           // 0-100, chỉ có khi status != pending/completed/failed
-    current_step?: string;       // Mô tả bước hiện tại (1-8)
+    // ⚠️ BR-002 Dual-Field: status CHỈ chứa 4 macro states
+    status: 'pending' | 'processing' | 'completed' | 'failed';
+    // ⚠️ processing_step chứa chi tiết bước đang chạy (8 steps)
+    processing_step: 'queued' | 'initial' | 'extracting' | 'chunking' |
+                     'extracting_entities' | 'building_graph' | 'embedding' | 'completed';
+    progress?: number;           // 0-100, chỉ có khi status = 'processing'
     error_message?: string;      // Chỉ có khi status = 'failed'
     stats?: {                    // Chỉ có khi status = 'completed'
       total_chunks: number;
@@ -128,6 +130,11 @@ interface GetDocumentStatusResponse {
   };
 }
 ```
+
+**⚠️ CRITICAL — BR-002 Dual-Field Enforcement:**
+- `status` field CHỈ chứa 4 giá trị macro: `pending`, `processing`, `completed`, `failed`
+- `processing_step` field chứa 8 bước chi tiết: `queued`, `initial`, `extracting`, `chunking`, `extracting_entities`, `building_graph`, `embedding`, `completed`
+- KHÔNG được gộp chung vào `status` như các phiên bản cũ.
 
 ---
 
@@ -845,6 +852,7 @@ interface ReviewFlashcardResponse {
 **1. Generate Quiz**
 ```
 POST /api/v1/quiz/generate
+Headers: Idempotency-Key: <UUID>  // ⚠️ BR-017: Chống duplicate quiz requests
 ```
 
 **Input Contract:**
@@ -857,10 +865,14 @@ interface GenerateQuizRequest {
   bloom_levels?: string[];       // ['remember', 'understand', 'apply', 'analyze']
 }
 
-// Validation:
-// - count <= 20
-// - difficulty >= 1 && difficulty <= 5
-// - document_id: phải tồn tại và status = 'completed'
+// ⚠️ BR-017 Idempotency:
+// - Client PHẢI gửi header Idempotency-Key (UUID v4)
+// - Backend check key trong Redis (TTL 1h)
+// - Nếu key tồn tại → trả về quiz cũ (200 OK), KHÔNG tạo mới
+// - Validation:
+//   - count <= 20
+//   - difficulty >= 1 && difficulty <= 5
+//   - document_id: phải tồn tại và status = 'completed'
 ```
 
 **Output Contract:**

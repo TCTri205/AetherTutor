@@ -438,9 +438,10 @@ sequenceDiagram
 | 3 | User nhấn "Save" | Frontend gửi request | `POST /api/v1/notes` |
 | 4 | Backend quét content tìm keywords | So khớp với entities trong graph | Content → Graph search |
 | 5 | Tìm thấy entities trùng | Gợi ý backlinks tới notes đã có | Entities → Notes lookup |
-| 6 | Lưu note với backlinks | `INSERT note + note_links` | PostgreSQL |
-| **6a** | **Sinh embedding cho note content** | **Embed note content → lưu ChromaDB** | **Note content → Embedding → ChromaDB** |
+| 6 | Lưu note với entity links | `INSERT note + note_entity_links` | PostgreSQL |
+| **6a** | **Queue ARQ task embed_note (async)** | **Trả về ngay với `embedding_status: 'pending'`** | **API → Worker (async)** |
 | 7 | Trả về note đã lưu | Frontend hiển thị với backlink suggestions | Note + backlinks → FE |
+| 8 | **Worker sinh embedding** | **Embed note content → lưu ChromaDB (content_type: "note")** | **Worker → ChromaDB → PG** |
 
 ### Alternative Flows
 
@@ -465,6 +466,7 @@ sequenceDiagram
     participant API as FastAPI
     participant Graph as Knowledge Graph
     participant PG as PostgreSQL
+    participant W as Worker (ARQ)
 
     U->>FE: Open Note Editor
     U->>FE: Title: "Backpropagation notes"<br/>Content: "Backpropagation uses chain rule..."
@@ -477,12 +479,18 @@ sequenceDiagram
     API->>PG: Find notes linked to these entities
     PG-->>API: 2 related notes found
 
-    API->>PG: INSERT note + note_links (2 backlinks)
+    API->>PG: INSERT note + note_entity_links (2 entity links)
     PG-->>API: note_id: note_abc123
 
-    API-->>FE: 201 Created {note, backlinks: [...]}
+    API-->>FE: 201 Created {note, backlinks: [...], embedding_status: 'pending'}
     FE->>U: Display note with backlink suggestions:
     Note over FE,U: "Linked to: 'Neural Networks Intro', 'Calculus Basics'"
+
+    Note over API,W: ⚠️ Background Worker — embed note content
+    API->>W: Queue ARQ task 'embed_note' {note_id, content}
+    W->>W: Generate embedding for note content
+    W->>CD: Store embedding in ChromaDB (content_type: "note")
+    W->>PG: UPDATE note SET embedding_status = 'completed'
 ```
 
 ---
@@ -712,25 +720,26 @@ sequenceDiagram
 | **4** | **Bắt đầu transaction PostgreSQL** | **BEGIN TRANSACTION** | **PostgreSQL** |
 | **5** | **Xóa embeddings (ChromaDB — KHÔNG có CASCADE)** | **ChromaDB: `delete(where={"document_id": doc_id})`** | **ChromaDB** |
 | **6** | **Xóa entity-document links (junction table)** | **`DELETE FROM entity_documents WHERE document_id = doc_id`** | **PostgreSQL** |
-| **7** | **Xóa document record (CASCADE tự động cleanup)** | **`DELETE FROM documents WHERE id = doc_id`**<br/>→ CASCADE xóa: `document_chunks`, `graph_entities` (of this doc), `graph_relations` (of this doc), `flashcards`, `quizzes`, `notes` | **PostgreSQL CASCADE** |
-| **8** | **Commit transaction** | **COMMIT** | **PostgreSQL** |
-| **9** | **Cleanup orphan entities** | **Xóa entities không còn `document_links` nào**<br/>`DELETE FROM graph_entities WHERE id NOT IN (SELECT entity_id FROM entity_documents)` | **PostgreSQL** |
+| **7** | **Cleanup orphan entities** | **Xóa entities không còn `document_links` nào**<br/>`DELETE FROM graph_entities WHERE id NOT IN (SELECT entity_id FROM entity_documents)` | **PostgreSQL** |
+| **8** | **Xóa document record (CASCADE cleanup)** | **`DELETE FROM documents WHERE id = doc_id`**<br/>→ CASCADE xóa: `document_chunks`, `flashcards`, `quizzes` (SET NULL), `notes` (SET NULL), `graph_relations` (qua document_id) | **PostgreSQL CASCADE** |
+| **9** | **Commit transaction** | **COMMIT** | **PostgreSQL** |
 | 10 | Rebuild NetworkX graph | Load lại graph từ SQL (nguồn sự thật) | NetworkX |
 | 11 | Trả về kết quả | Frontend đóng modal, refresh danh sách | Response: `{deleted_entities, deleted_relations, deleted_embeddings, cascade_counts}` |
 
 **⚠️ CASCADE Clarification:**
 ```
-PostgreSQL Foreign Keys với ON DELETE CASCADE:
+PostgreSQL Foreign Keys với ON DELETE CASCADE/SET NULL:
     - documents → document_chunks (CASCADE)
     - documents → graph_entities (SET NULL cho document_id, KHÔNG xóa entity)
-    - documents → flashcards (SET NULL)
-    - documents → quizzes (SET NULL)
-    - documents → notes (SET NULL)
-    - graph_entities → graph_relations (CASCADE)
-    - entity_documents → (junction row, CASCADE)
+    - documents → graph_relations (CASCADE qua document_id)
+    - documents → flashcards (SET NULL cho source_document_id)
+    - documents → quizzes (SET NULL cho document_id)
+    - documents → notes (SET NULL cho source_document_id)
+    - entity_documents → junction row (CASCADE khi document HOẶC entity bị xóa)
 
 THỦ CÔNG (KHÔNG có CASCADE):
-    - ChromaDB embeddings → PHẢI xóa thủ công trước khi commit
+    - ChromaDB embeddings → PHẢI xóa thủ công TRƯỚC khi commit SQL
+    - Orphan entities → PHẢI cleanup SAU KHI xóa entity_documents links
     - NetworkX in-memory graph → PHẢI reload sau khi xóa SQL
 
 ⚠️ Nếu ChromaDB delete fail:
@@ -998,13 +1007,19 @@ sequenceDiagram
 
 **Rollback Steps (Step 5 — BẮT BUỘC):**
 ```
+⚠️ CRITICAL — Entity-Document Many-to-Many (junction table):
+Entities có thể được chia sẻ giữa nhiều documents qua entity_documents.
+KHÔNG được xóa trực tiếp graph_entities theo document_id.
+
 5a. DELETE FROM document_chunks WHERE document_id = :doc_id
-5b. DELETE FROM graph_entities WHERE document_id = :doc_id
-5c. DELETE FROM graph_relations WHERE document_id = :doc_id
-5d. ChromaDB: delete(where={"document_id": doc_id, "content_type": "chunk"})
-5e. ChromaDB: delete(where={"document_id": doc_id, "content_type": "entity"})
-5f. NetworkX: remove nodes associated with doc_id từ in-memory graph
-5g. Log rollback action → graph_edit_log
+5b. DELETE FROM graph_relations WHERE document_id = :doc_id
+5c. DELETE FROM entity_documents WHERE document_id = :doc_id  ← Junction table
+5d. Cleanup orphan entities:
+    DELETE FROM graph_entities WHERE id NOT IN (SELECT entity_id FROM entity_documents)
+5e. ChromaDB: delete(where={"document_id": doc_id, "content_type": "chunk"})
+5f. ChromaDB: delete(where={"document_id": doc_id, "content_type": "entity"})
+5g. NetworkX: remove nodes associated with doc_id từ in-memory graph
+5h. Log rollback action → graph_edit_log
 ```
 
 ### Alternative Flows
