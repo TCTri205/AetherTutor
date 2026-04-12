@@ -64,13 +64,10 @@ def upgrade() -> None:
         'quiz_results',
         ['user_id', 'completed_at']
     )
-    
+
     # Flashcard composite indexes
-    op.create_index(
-        'idx_flashcards_user_source',
-        'flashcards',
-        ['user_id', 'source']
-    )
+    # NOTE: idx_flashcards_user_source đã được tạo trong migration g4h5i6j7k8l9
+    # Không tạo lại ở đây để tránh duplicate
     
     # Notes composite indexes
     op.create_index(
@@ -96,7 +93,8 @@ def downgrade() -> None:
     op.drop_index('idx_messages_conversation_id', table_name='messages')
     op.drop_index('idx_conversations_user_id', table_name='conversations')
     op.drop_index('idx_notes_user_created', table_name='notes')
-    op.drop_index('idx_flashcards_user_source', table_name='flashcards')
+    # NOTE: idx_flashcards_user_source được quản lý bởi migration g4h5i6j7k8l9
+    # Không drop ở đây để tránh conflict
     op.drop_index('idx_quiz_results_user_completed', table_name='quiz_results')
     op.drop_index('idx_document_chunks_chunk_index', table_name='document_chunks')
     op.drop_index('idx_document_chunks_document_id', table_name='document_chunks')

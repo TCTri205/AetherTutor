@@ -279,12 +279,18 @@ class TestMockMode:
 
     def test_send_mock_logs_email_details(self, caplog):
         """Mock send email log thông tin email."""
-        with caplog.at_level("INFO"):
+        import logging
+        # Loguru logs không capture được bằng caplog trực tiếp, 
+        # nên patch logger.info để verify
+        with patch("app.services.email_service.logger") as mock_logger:
             _send_mock("user@example.com", "Test Subject", "<html>Hello</html>")
 
-        assert "MOCK EMAIL" in caplog.text
-        assert "user@example.com" in caplog.text
-        assert "Test Subject" in caplog.text
+            # Verify logger.info được gọi với nội dung đúng
+            mock_logger.info.assert_called_once()
+            call_args = mock_logger.info.call_args[0][0]
+            assert "MOCK EMAIL" in call_args
+            assert "user@example.com" in call_args
+            assert "Test Subject" in call_args
 
     @patch("app.services.email_service.settings")
     @patch("app.services.email_service.smtplib.SMTP")

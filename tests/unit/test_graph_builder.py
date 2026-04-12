@@ -464,12 +464,18 @@ class TestClearAndSingleton:
 
     def test_clear_graph(self, graph_builder):
         """Clear → graph rỗng."""
-        from app.core.graph_builder import get_graph_builder
+        from app.core.graph_builder import get_graph_builder, reset_graph_builder
 
+        # Reset singleton để đảm bảo không bị ảnh hưởng bởi tests khác
+        reset_graph_builder()
+        
         # Tạo 1 global builder để test singleton
         builder = get_graph_builder()
+        initial_nodes = builder.graph.number_of_nodes()
+        
+        # Thêm 1 node để test
         builder.graph.add_node("Test")
-        assert builder.graph.number_of_nodes() == 1
+        assert builder.graph.number_of_nodes() == initial_nodes + 1
 
         builder.clear()
         assert builder.graph.number_of_nodes() == 0

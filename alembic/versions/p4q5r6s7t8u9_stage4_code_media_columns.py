@@ -25,6 +25,10 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE graph_entities ADD COLUMN IF NOT EXISTS file_size INTEGER"
     )
+    # Add display_name to graph_entities (required by GraphEntity model)
+    op.execute(
+        "ALTER TABLE graph_entities ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)"
+    )
 
     # Add media_type and source_url to documents
     op.execute(
@@ -38,5 +42,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("documents", "source_url")
     op.drop_column("documents", "media_type")
+    op.drop_column("graph_entities", "display_name")
     op.drop_column("graph_entities", "file_size")
     op.drop_column("graph_entities", "code_snippet")

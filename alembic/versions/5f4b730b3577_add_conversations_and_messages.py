@@ -33,11 +33,8 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
 
-    # Create MessageStatus Enum type
-    messagestatus = postgresql.ENUM('PENDING', 'COMPLETED', 'FAILED', name='messagestatus')
-    messagestatus.create(op.get_bind())
-
     # Create messages table
+    # Note: messagestatus enum sẽ được tự động tạo bởi SQLAlchemy khi define column
     op.create_table(
         'messages',
         sa.Column('id', sa.UUID(), nullable=False),

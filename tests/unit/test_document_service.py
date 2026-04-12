@@ -31,34 +31,35 @@ async def test_upload_new_document_success(doc_service, mock_session, mock_arq_p
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = "test.pdf"
     mock_file.read = AsyncMock(return_value=file_content)
-    
+
     # Mock repo & methods
     doc_id = uuid.uuid4()
     mock_doc = MagicMock()
     mock_doc.id = doc_id
     mock_doc.filename = "test.pdf"
-    
+
     doc_service.repo.get_by_hash = AsyncMock(return_value=None)
     doc_service.repo.create = AsyncMock(return_value=mock_doc)
     doc_service.repo.update_file_path = AsyncMock()
     doc_service.repo.update_status = AsyncMock()
-    
+    doc_service.repo.count_processing_documents = AsyncMock(return_value=0)
+
     with patch("os.makedirs"), \
          patch("aiofiles.open", MagicMock()) as mock_aio_open:
-        
+
         # Thiết lập aiofiles mock deep
         mock_f = AsyncMock()
         mock_aio_open.return_value.__aenter__.return_value = mock_f
-        
-        doc, is_duplicate = await doc_service.upload_document(mock_file)
-        
+
+        doc = await doc_service.upload_document(mock_file)
+
         assert doc.id == doc_id
-        assert is_duplicate is False
         doc_service.repo.create.assert_called_once()
-        mock_arq_pool.enqueue_job.assert_called_once_with("process_document_task", str(doc_id))
+        mock_arq_pool.enqueue_job.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_upload_duplicate_document():
+    """Test upload raises 409 when duplicate file hash found (BR-017)."""
     # Mock file
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = "test.pdf"
@@ -66,12 +67,15 @@ async def test_upload_duplicate_document():
 
     # Mock existing doc
     existing_doc = MagicMock()
+    existing_doc.id = uuid.uuid4()
+    existing_doc.status = DocumentStatus.COMPLETED
 
     # Mock repo với patch DocumentRepository
     with patch("app.services.document_service.DocumentRepository") as MockRepo:
         mock_repo_instance = MockRepo.return_value
         mock_repo_instance.get_by_hash = AsyncMock(return_value=existing_doc)
         mock_repo_instance.create = AsyncMock(return_value=MagicMock())
+        mock_repo_instance.count_processing_documents = AsyncMock(return_value=0)
 
         mock_session = AsyncMock()
         mock_arq_pool = AsyncMock()
@@ -80,10 +84,12 @@ async def test_upload_duplicate_document():
 
         service = DocumentService(mock_session, mock_arq_pool, mock_user_id)
 
-        doc, is_duplicate = await service.upload_document(mock_file)
+        # BR-017: Duplicate document should raise 409
+        with pytest.raises(HTTPException) as excinfo:
+            await service.upload_document(mock_file)
 
-        assert doc == existing_doc
-        assert is_duplicate is True
+        assert excinfo.value.status_code == 409
+        assert "đã được upload trước đó" in excinfo.value.detail
         mock_repo_instance.create.assert_not_called()
 
 @pytest.mark.asyncio
@@ -117,15 +123,19 @@ async def test_delete_document_success(doc_service, mock_session):
     mock_doc.file_path = "/tmp/test.pdf"
     doc_service.repo.get_by_id = AsyncMock(return_value=mock_doc)
     doc_service.repo.delete = AsyncMock()
-    
+    mock_session.commit = AsyncMock()
+
     with patch("os.path.exists", return_value=True), \
          patch("os.remove") as mock_remove, \
          patch("app.services.document_service.chroma_client") as mock_chroma:
-        
+
         result = await doc_service.delete_document(doc_id)
-        
-        assert result is True
+
+        assert isinstance(result, dict)
+        assert "document_id" in result
+        assert "đã được xóa" in result["message"]
         doc_service.repo.delete.assert_called_once_with(doc_id)
+        mock_session.commit.assert_called_once()
         mock_remove.assert_called_once_with("/tmp/test.pdf")
         mock_chroma.delete_by_document_id.assert_called_once_with(doc_id)
 

@@ -18,18 +18,23 @@ async def test_upload_valid_pdf(async_client: AsyncClient, sample_pdf_bytes: byt
 
 @pytest.mark.asyncio
 async def test_upload_duplicate(async_client: AsyncClient, sample_pdf_bytes: bytes):
-    """Test upload file đã tồn tại -> 200 OK"""
+    """Test upload file đã tồn tại -> 409 Conflict (BR-017)"""
     # Lần 1: Upload mới
     files = {"file": ("test_dup.pdf", sample_pdf_bytes, "application/pdf")}
-    await async_client.post("/api/v1/documents/upload", files=files)
-    
-    # Lần 2: Upload lại chính file đó
-    response = await async_client.post("/api/v1/documents/upload", files=files)
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert "document_id" in data
-    assert "đã tồn tại" in data["message"]
+    response1 = await async_client.post("/api/v1/documents/upload", files=files)
+    assert response1.status_code == 202
+
+    # Lần 2: Upload lại chính file đó -> 409 theo BR-017
+    # Lưu ý: Document đầu tiên có thể còn PENDING/PROCESSING → BR-011 trigger trước
+    response2 = await async_client.post("/api/v1/documents/upload", files=files)
+
+    assert response2.status_code == 409
+    data = response2.json()
+    # Có thể là "đang được xử lý" (BR-011) hoặc "đã được upload" (BR-017)
+    assert any(msg in data["detail"] for msg in [
+        "đã được upload trước đó",
+        "đang được xử lý"
+    ])
 
 @pytest.mark.asyncio
 async def test_list_documents(async_client: AsyncClient, processed_document):

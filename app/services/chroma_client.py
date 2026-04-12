@@ -264,7 +264,9 @@ class ChromaClient:
 
         # 2. Quét TẤT CẢ collections trong ChromaDB để tìm collections cũ
         try:
-            all_collections = self.client.list_collections()
+            all_collection_objs = self.client.list_collections()
+            # list_collections() trả về list của Collection objects
+            all_collections = [col.name if hasattr(col, 'name') else str(col) for col in all_collection_objs]
             current_names = {
                 self.chunks_collection.name,
                 self.entities_collection.name,
