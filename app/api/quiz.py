@@ -57,7 +57,7 @@ router = APIRouter(prefix="/quiz", tags=["Quiz"])
 @router.post("/generate", response_model=QuizResponse)
 async def generate_quiz(
     request: QuizGenerateRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -71,7 +71,8 @@ async def generate_quiz(
 
     doc_uuid = uuid.UUID(request.document_id)
     doc_repo = DocumentRepository(session)
-    document = await doc_repo.get_by_id_with_user(doc_uuid, uuid.UUID(user_id))
+    # user_id is already UUID object from get_current_user_id dependency
+    document = await doc_repo.get_by_id_with_user(doc_uuid, user_id)
 
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -119,7 +120,7 @@ async def generate_quiz(
     # Generate quiz using ExaminerAgent
     questions = await examiner_agent.generate_quiz(
         document_id=doc_uuid,
-        user_id=uuid.UUID(user_id),
+        user_id=user_id,
         entities=entities,
         centrality_scores=centrality_scores,
         graph_relations=relations_data,
@@ -141,7 +142,7 @@ async def generate_quiz(
         quiz_title += f" - {request.topic}"
 
     quiz = await quiz_repo.create_quiz(
-        user_id=uuid.UUID(user_id),
+        user_id=user_id,
         document_id=doc_uuid,
         title=quiz_title,
         questions=questions,
@@ -186,7 +187,7 @@ async def generate_quiz(
 async def submit_quiz(
     quiz_id: str,
     request: QuizSubmitRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -201,7 +202,7 @@ async def submit_quiz(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    if str(quiz.user_id) != user_id:
+    if quiz.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz")
 
     # Get questions from quiz metadata
@@ -219,7 +220,7 @@ async def submit_quiz(
     # Save result
     result_repo = QuizResultRepository(session)
     result = await result_repo.create_result(
-        user_id=uuid.UUID(user_id),
+        user_id=user_id,
         quiz_id=quiz_uuid,
         score=evaluation["score"],
         total_questions=evaluation["total_questions"],
@@ -240,7 +241,7 @@ async def submit_quiz(
             continue
 
         answer_record = {
-            "user_id": uuid.UUID(user_id),
+            "user_id": str(user_id),
             "quiz_result_id": result.id,
             "question_index": question.get("order", 0),
             "question_text": question["question_text"],
@@ -304,7 +305,7 @@ async def submit_quiz(
 @router.get("/results/{result_id}", response_model=QuizResultResponse)
 async def get_quiz_result(
     result_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -317,7 +318,7 @@ async def get_quiz_result(
     if not result:
         raise HTTPException(status_code=404, detail="Quiz result not found")
 
-    if str(result.user_id) != user_id:
+    if result.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz result")
 
     # Build response
@@ -364,7 +365,7 @@ async def list_quiz_results(
     quiz_id: str,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -379,13 +380,13 @@ async def list_quiz_results(
     quiz = await quiz_repo.get_by_id_with_questions(quiz_uuid)
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
-    if str(quiz.user_id) != user_id:
+    if quiz.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz")
 
     # Get results for this quiz
     result_repo = QuizResultRepository(session)
     results = await result_repo.get_by_user(
-        uuid.UUID(user_id), skip=skip, limit=limit, quiz_id=quiz_uuid
+        user_id, skip=skip, limit=limit, quiz_id=quiz_uuid
     )
 
     return [
@@ -409,7 +410,7 @@ async def list_quizzes(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     document_id: Optional[str] = None,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """List user's quizzes with pagination."""
@@ -417,7 +418,7 @@ async def list_quizzes(
     doc_uuid = uuid.UUID(document_id) if document_id else None
 
     quizzes = await quiz_repo.get_by_user(
-        uuid.UUID(user_id), skip=skip, limit=limit, document_id=doc_uuid
+        user_id, skip=skip, limit=limit, document_id=doc_uuid
     )
 
     return [
@@ -436,7 +437,7 @@ async def list_quizzes(
 @router.get("/{quiz_id}", response_model=QuizResponse)
 async def get_quiz(
     quiz_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """Get quiz detail with questions."""
@@ -447,7 +448,7 @@ async def get_quiz(
     if not quiz:
         raise HTTPException(status_code=404, detail="Quiz not found")
 
-    if str(quiz.user_id) != user_id:
+    if quiz.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz")
 
     questions = quiz.quiz_metadata.get("questions", [])
@@ -485,7 +486,7 @@ async def get_quiz(
 @router.post("/results/{result_id}/convert-to-flashcards")
 async def convert_to_flashcards(
     result_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -500,7 +501,7 @@ async def convert_to_flashcards(
     if not result:
         raise HTTPException(status_code=404, detail="Quiz result not found")
 
-    if str(result.user_id) != user_id:
+    if result.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz result")
 
     # Get quiz questions for context
@@ -541,7 +542,7 @@ async def convert_to_flashcards(
 @router.post("/results/{result_id}/generate-flashcards")
 async def generate_flashcards_from_result(
     result_id: str,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -562,7 +563,7 @@ async def generate_flashcards_from_result(
     if not result:
         raise HTTPException(status_code=404, detail="Quiz result not found")
 
-    if str(result.user_id) != user_id:
+    if result.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz result")
 
     # Build service with all dependencies
@@ -579,7 +580,7 @@ async def generate_flashcards_from_result(
     )
 
     flashcards = await generation_service.generate_from_quiz_wrong_answers(
-        user_id=uuid.UUID(user_id),
+        user_id=user_id,
         quiz_result_id=result_uuid,
         db_session=session,
     )
@@ -606,7 +607,7 @@ async def generate_flashcards_from_result(
 async def submit_feedback(
     result_id: str,
     request: QuizFeedbackRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -622,7 +623,7 @@ async def submit_feedback(
     if not result:
         raise HTTPException(status_code=404, detail="Quiz result not found")
 
-    if str(result.user_id) != user_id:
+    if result.user_id != user_id:
         raise HTTPException(status_code=403, detail="Not your quiz result")
 
     await result_repo.update_quality_feedback(
@@ -660,12 +661,12 @@ async def submit_feedback(
 
 @router.get("/stats", response_model=QuizStatsResponse)
 async def get_quiz_stats(
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """Get user's quiz statistics."""
     result_repo = QuizResultRepository(session)
-    stats = await result_repo.get_stats(uuid.UUID(user_id))
+    stats = await result_repo.get_stats(user_id)
 
     return QuizStatsResponse(**stats)
 
@@ -673,7 +674,7 @@ async def get_quiz_stats(
 @router.get("/weak-areas", response_model=list[WeakAreaResponse])
 async def get_weak_areas(
     limit: int = Query(10, ge=1, le=50),
-    user_id: str = Depends(get_current_user_id),
+    user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db),
 ):
     """
@@ -682,7 +683,7 @@ async def get_weak_areas(
     Entities that user got wrong most frequently.
     """
     result_repo = QuizResultRepository(session)
-    weak_areas = await result_repo.get_weak_areas(uuid.UUID(user_id), limit=limit)
+    weak_areas = await result_repo.get_weak_areas(user_id, limit=limit)
 
     if not weak_areas:
         return []
@@ -691,7 +692,7 @@ async def get_weak_areas(
     graph_repo = GraphRepository(session)
     entity_names = [wa["entity_name"] for wa in weak_areas]
     entity_types_map = await graph_repo.get_entity_types_by_names(
-        user_id=uuid.UUID(user_id), canonical_names=entity_names
+        user_id=user_id, canonical_names=entity_names
     )
 
     return [
