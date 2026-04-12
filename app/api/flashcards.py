@@ -9,7 +9,7 @@ Endpoints:
 - GET /api/v1/flashcards/stats - Thống kê review
 - POST /api/v1/flashcards/generate - Auto-generate từ document
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import uuid
@@ -237,31 +237,40 @@ async def generate_flashcards_from_document(
 ):
     """
     Auto-generate flashcards từ graph entities trong document.
+
+    ⚠️ BR-004: Validate document status = COMPLETED trước khi generate.
     """
     from ..repositories.graph_repo import GraphRepository
+    from ..repositories.document_repo import DocumentRepository
     from ..services.flashcard_generation_service import FlashcardGenerationService
 
     flashcard_repo = FlashcardRepository(db)
     graph_repo = GraphRepository(db)
+    document_repo = DocumentRepository(db)
 
     generation_service = FlashcardGenerationService(
         flashcard_repo=flashcard_repo,
-        graph_repo=graph_repo
+        graph_repo=graph_repo,
+        document_repo=document_repo
     )
 
-    cards = await generation_service.generate_from_document(
-        user_id=user_id,
-        document_id=request.document_id,
-        source=request.source,
-        max_cards=50,
-        min_confidence=0.7,
-        db_session=db
-    )
+    try:
+        cards = await generation_service.generate_from_document(
+            user_id=user_id,
+            document_id=request.document_id,
+            source=request.source,
+            max_cards=50,
+            min_confidence=0.7,
+            db_session=db
+        )
 
-    await db.commit()
+        await db.commit()
 
-    return FlashcardBulkGenerateResponse(
-        success=True,
-        cards_created=len(cards),
-        cards=[FlashcardRead.model_validate(c) for c in cards]
-    )
+        return FlashcardBulkGenerateResponse(
+            success=True,
+            cards_created=len(cards),
+            cards=[FlashcardRead.model_validate(c) for c in cards]
+        )
+    except ValueError as e:
+        # BR-004: Document chưa completed
+        raise HTTPException(status_code=400, detail=str(e))

@@ -61,7 +61,7 @@ Trong MVP, chỉ có **1 Actor duy nhất** (Owner), nhưng Actor này tồn t�
 |---|---|---|---|
 | **New User** | Chưa có document nào | Upload document, General Chat (không graph-aware) | Không thể dùng Graph/Flashcard/Quiz/Notes |
 | **Active User** | ≥ 1 document `completed` | Tất cả tính năng: Chat graph-aware, Flashcard, Quiz, Notes | Chịu rate limits (BR-012) |
-| **Processing User** | Có document đang `processing` | Vẫn dùng tính năng cũ được | Không upload thêm nếu đã có 1 document pending/processing (tránh queue overload) |
+| **Processing User** | Có document đang `pending`, `processing`, `chunking`, `entity_extraction`, `graph_construction`, `embedding_generation`, hoặc `vector_storage` | Vẫn dùng tính năng cũ được | **KHÔNG upload thêm** (409 CONCURRENT_PROCESSING — BR-011) |
 | **Rate Limited** | Vượt quota trong ngày (BR-012) | Xem dữ liệu cũ, ôn tập flashcard | Không upload/generate flashcard/quiz mới |
 | **Degraded Mode** | LLM service unavailable | Xem graph, notes, flashcard đã có | Không chat, không generate flashcard/quiz mới |
 
@@ -72,6 +72,11 @@ Active User ──(upload)──→ Processing User ──(complete)──→ Ac
 Active User ──(rate limit hit)──→ Rate Limited ──(next day)──→ Active User
 Active User ──(LLM down)──→ Degraded Mode ──(LLM up)──→ Active User
 ```
+
+**⚠️ CRITICAL — Concurrent Processing Enforcement:**
+- Khi user ở trạng thái **Processing User**, API upload trả về `409 CONCURRENT_PROCESSING`
+- User PHẢI đợi document hiện tại `completed` hoặc `failed` mới upload được file tiếp theo
+- Ngăn queue overload và worker crash (BR-011)
 
 ### 1.3 Phạm Vi MVP
 
@@ -193,20 +198,24 @@ graph TB
 **MỌI dữ liệu phải được cô lập (isolate) theo `user_id`. Dữ liệu User A KHÔNG BAO GIỜ hiển thị cho User B.**
 
 ### BR-002: Document Processing Pipeline (BẤT BIẾN)
-**8 trạng thái BẮT BUỘC (khớp Data_Model State Machine):**
+**Dual-Field State Machine (2 fields: `status` + `processing_step`):**
 
-| Bước | State | Input | Output |
+**Field 1 — status (4 macro states):** `PENDING` → `PROCESSING` → `COMPLETED` / `FAILED`
+
+**Field 2 — processing_step (8 steps):**
+
+| Step | processing_step | status | Tên |
 |---|---|---|---|
-| 1 | `pending` | File PDF/URL upload | Document record created |
-| 2 | `processing` | Worker picks up task | Status update |
-| 3 | `chunking` | Raw text extracted | Chunks (500 chars, 50 overlap) |
-| 4 | `entity_extraction` | Chunks | JSON entities + relations |
-| 5 | `graph_construction` | Entities + Relations | NetworkX graph built |
-| 6 | `embedding_generation` | Chunks | Vector embeddings |
-| 7 | `vector_storage` | Embeddings generated | Saved to ChromaDB |
-| 8 | `completed` | All storage success | Document ready |
+| 1 | `QUEUED` | `PENDING` | Chờ trong hàng đợi |
+| 2 | `INITIAL` | `PROCESSING` | Worker bắt đầu |
+| 3 | `EXTRACTING` | `PROCESSING` | Trích xuất text từ PDF |
+| 4 | `CHUNKING` | `PROCESSING` | Chia nhỏ văn bản |
+| 5 | `EXTRACTING_ENTITIES` | `PROCESSING` | Trích xuất entities + relations |
+| 6 | `BUILDING_GRAPH` | `PROCESSING` | Xây dựng Knowledge Graph |
+| 7 | `EMBEDDING` | `PROCESSING` | Sinh embeddings (chunks + entities) |
+| 8 | `COMPLETED` | `COMPLETED` | Hoàn thành |
 
-**Failure Path:** Bất kỳ bước nào fail → `failed` state với error_message.
+**Failure Path:** Bất kỳ bước nào fail → `status = FAILED`, `processing_step` = step bị lỗi.
 
 **Chi tiết đầy đủ tại:** [Business_Rules.md#br-002](Business_Rules.md#br-002-document-processing-pipeline)
 

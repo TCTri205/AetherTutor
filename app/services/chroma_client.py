@@ -120,7 +120,18 @@ class ChromaClient:
         metadatas: Optional[List[Dict]] = None,
         embeddings: Optional[List[List[float]]] = None,
     ):
-        """Add chunks to the chunks collection."""
+        """
+        Add chunks to the chunks collection.
+
+        ⚠️ BR-002: Tự động thêm content_type="chunk" vào metadata để phân biệt với entities.
+        """
+        # BR-002: Ensure content_type metadata
+        if metadatas:
+            for m in metadatas:
+                m.setdefault("content_type", "chunk")
+        else:
+            metadatas = [{"content_type": "chunk"} for _ in ids]
+
         self.add_to_collection(
             self.chunks_collection,
             ids=ids,
@@ -136,7 +147,18 @@ class ChromaClient:
         metadatas: Optional[List[Dict]] = None,
         embeddings: Optional[List[List[float]]] = None,
     ):
-        """Add entities to the entities collection."""
+        """
+        Add entities to the entities collection.
+
+        ⚠️ BR-002: Tự động thêm content_type="entity" vào metadata để phân biệt với chunks.
+        """
+        # BR-002: Ensure content_type metadata
+        if metadatas:
+            for m in metadatas:
+                m.setdefault("content_type", "entity")
+        else:
+            metadatas = [{"content_type": "entity"} for _ in ids]
+
         self.add_to_collection(
             self.entities_collection,
             ids=ids,

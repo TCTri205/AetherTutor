@@ -62,11 +62,13 @@ class DocumentRepository(BaseRepository[Document]):
             await self.session.flush()
         return doc
 
-    async def list_with_counts(self, skip: int = 0, limit: int = 100) -> List[Tuple[Document, int, int]]:
+    async def list_with_counts(self, user_id: uuid.UUID, skip: int = 0, limit: int = 100) -> List[Tuple[Document, int, int]]:
         """
         Fetch documents with entity/relation counts in a single query.
         Uses correlated subqueries to avoid Cartesian product from double JOIN
         (m entities × n relations = m*n rows would inflate counts).
+
+        ⚠️ BR-001: BẮT BUỘC lọc theo user_id để đảm bảo user data isolation.
         """
         entity_count_sq = (
             select(func.count(GraphEntity.id))
@@ -87,6 +89,7 @@ class DocumentRepository(BaseRepository[Document]):
                 func.coalesce(entity_count_sq, 0).label("entity_count"),
                 func.coalesce(relation_count_sq, 0).label("relation_count")
             )
+            .where(Document.user_id == user_id)  # BR-001: User data isolation
             .order_by(Document.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -127,3 +130,23 @@ class DocumentRepository(BaseRepository[Document]):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_processing_documents(self, user_id: uuid.UUID) -> int:
+        """
+        Đếm số document đang trong quá trình xử lý của user.
+
+        ⚠️ BR-011: Dùng để chặn upload mới khi đang có document processing.
+        """
+        processing_statuses = [
+            DocumentStatus.PENDING,
+            DocumentStatus.PROCESSING,
+        ]
+        stmt = (
+            select(func.count(Document.id))
+            .where(
+                Document.user_id == user_id,
+                Document.status.in_(processing_statuses)
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0

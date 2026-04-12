@@ -53,6 +53,9 @@ class User(Base, TimestampMixin):
     note_links = relationship(
         "NoteLink", back_populates="user", cascade="all, delete-orphan"
     )
+    note_entity_links = relationship(
+        "NoteEntityLink", back_populates="user", cascade="all, delete-orphan"
+    )
     entity_aliases = relationship(
         "EntityAlias", back_populates="user", cascade="all, delete-orphan"
     )

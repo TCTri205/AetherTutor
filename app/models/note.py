@@ -3,9 +3,8 @@ Note & NoteLink models for Stage 2 - Zettelkasten & Bi-directional Linking
 """
 
 import uuid
-from datetime import datetime
 from sqlalchemy import (
-    String, Text, ForeignKey, Index, DateTime
+    String, Text, ForeignKey, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSON, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -53,6 +52,9 @@ class Note(Base, TimestampMixin):
     )
     note_associations = relationship(
         "NoteTopic", back_populates="note", cascade="all, delete-orphan"
+    )
+    entity_links = relationship(
+        "NoteEntityLink", back_populates="note", cascade="all, delete-orphan"
     )
 
     __table_args__ = (

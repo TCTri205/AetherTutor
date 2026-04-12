@@ -85,30 +85,20 @@ async def upload_document(
 ):
     """
     Tải lên file PDF và bắt đầu luồng xử lý tự động (Async).
-    Trả về 202 Accepted cho file mới, 200 OK cho file đã tồn tại.
+    Trả về 202 Accepted cho file mới.
+    Trả về 409 Conflict nếu file đã tồn tại (BR-017).
     """
-    doc, is_duplicate = await service.upload_document(file)
+    doc = await service.upload_document(file)
 
-    if is_duplicate:
-        return JSONResponse(
-            status_code=200,
-            content={
-                "document_id": str(doc.id),
-                "filename": doc.filename,
-                "status": doc.status,
-                "message": "Tài liệu này đã tồn tại trong hệ thống."
-            }
-        )
-    else:
-        return JSONResponse(
-            status_code=202,
-            content={
-                "document_id": str(doc.id),
-                "filename": doc.filename,
-                "status": doc.status,
-                "message": "Yêu cầu đã được tiếp nhận và đang được xử lý trong hàng đợi."
-            }
-        )
+    return JSONResponse(
+        status_code=202,
+        content={
+            "document_id": str(doc.id),
+            "filename": doc.filename,
+            "status": doc.status,
+            "message": "Yêu cầu đã được tiếp nhận và đang được xử lý trong hàng đợi."
+        }
+    )
 
 
 @router.get("/", response_model=List[DocumentDetail])
@@ -139,6 +129,10 @@ async def delete_document(
     document_id: uuid.UUID,
     service: DocumentService = Depends(get_doc_service)
 ):
-    """Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File)."""
-    await service.delete_document(document_id)
-    return {"message": f"Tài liệu {document_id} đã được xóa hoàn toàn khỏi hệ thống."}
+    """
+    Xóa tài liệu và toàn bộ dữ liệu đồ thị liên quan (SQL + Chroma + File).
+
+    ⚠️ UF-010: Atomic delete — nếu ChromaDB fail thì rollback.
+    """
+    result = await service.delete_document(document_id)
+    return result

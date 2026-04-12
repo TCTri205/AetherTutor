@@ -27,15 +27,24 @@ class DocumentService:
     def _calculate_hash(self, content: bytes) -> str:
         return hashlib.sha256(content).hexdigest()
 
-    async def upload_document(self, file: UploadFile) -> tuple[Document, bool]:
+    async def upload_document(self, file: UploadFile) -> Document:
         """
         Xử lý tải lên tài liệu:
         1. Validate (Size, Extension).
-        2. Check Hash duplication.
-        3. Save file to disk.
-        4. Create DB record.
-        5. Enqueue background task.
-        Returns: (Document object, is_duplicate: bool)
+        2. Check Hash duplication (BR-017: 409 nếu trùng).
+        3. Check concurrent processing (BR-011: 409 nếu đang có doc processing).
+        4. Save file to disk.
+        5. Create DB record.
+        6. Enqueue background task.
+
+        Returns:
+            Document object đã được tạo thành công
+
+        Raises:
+            HTTPException 409: Duplicate document hoặc concurrent processing
+            HTTPException 400: Invalid file type/size
+            HTTPException 413: File too large
+            HTTPException 503: Task queue unavailable
         """
         # 1. Validation
         extension = os.path.splitext(file.filename)[1].lower()
@@ -49,11 +58,28 @@ class DocumentService:
 
         content_hash = self._calculate_hash(content)
 
-        # 2. Check trùng lặp theo Hash
+        # 2. Check trùng lặp theo Hash (BR-017: Idempotency)
         existing_doc = await self.repo.get_by_hash(content_hash)
         if existing_doc:
-            # Nếu đã có file trùng hash, trả về kèm flag is_duplicate = True
-            return existing_doc, True
+            # BR-017: Document đã tồn tại → 409 DUPLICATE_DOCUMENT
+            if existing_doc.status in (DocumentStatus.PENDING, DocumentStatus.PROCESSING):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Document này đang được xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."
+                )
+            # BR-017: Document đã completed/failed → trả về 409 với link tới resource cũ
+            raise HTTPException(
+                status_code=409,
+                detail=f"File này đã được upload trước đó (document_id: {existing_doc.id}, status: {existing_doc.status.value})."
+            )
+
+        # BR-011: Check concurrent processing — chặn upload mới khi user đang có document processing
+        processing_count = await self.repo.count_processing_documents(self.user_id)
+        if processing_count > 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Document khác đang được xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."
+            )
 
         # 3. Tạo bản ghi Document (PENDING)
         try:
@@ -67,7 +93,11 @@ class DocumentService:
                     status_code=409,
                     detail="Concurrent upload conflict. Please retry."
                 )
-            return existing_doc, True
+            # BR-017: Duplicate document
+            raise HTTPException(
+                status_code=409,
+                detail=f"File này đã được upload trước đó (document_id: {existing_doc.id})."
+            )
 
         doc_id = doc.id
         
@@ -96,9 +126,9 @@ class DocumentService:
                 await self.session.commit()
                 raise HTTPException(status_code=503, detail="Hệ thống hàng đợi đang bận. Vui lòng thử lại sau.")
 
-            # Trả về đối tượng Document đã cập nhật kèm flag is_duplicate = False
+            # Trả về đối tượng Document đã cập nhật
             await self.session.refresh(doc)
-            return doc, False
+            return doc
 
         except Exception as e:
             # Rollback nếu có bất kỳ lỗi nào trong quá trình lưu file hoặc cập nhật DB
@@ -141,8 +171,10 @@ class DocumentService:
         """
         Fetch documents with entity/relation counts in a single query.
         Uses list_with_counts to avoid N+1 problem (was 1 + 2n queries, now 1).
+
+        ⚠️ BR-001: Lọc theo user_id để đảm bảo user data isolation.
         """
-        rows = await self.repo.list_with_counts(skip, limit)
+        rows = await self.repo.list_with_counts(self.user_id, skip, limit)
         results = []
         for doc, entity_count, relation_count in rows:
             file_size = 0
@@ -165,26 +197,54 @@ class DocumentService:
         return results
 
     async def delete_document(self, doc_id: uuid.UUID):
-        """ Xóa tài liệu khỏi hệ thống hoàn toàn. """
+        """
+        Xóa tài liệu khỏi hệ thống hoàn toàn.
+
+        ⚠️ UF-010: Atomic delete — nếu ChromaDB fail thì ROLLBACK PostgreSQL.
+        Thứ tự xóa:
+            1. ChromaDB embeddings (KHÔNG có CASCADE — phải xóa thủ công)
+            2. PostgreSQL records (CASCADE tự động cleanup)
+            3. Physical file trên disk
+
+        Returns:
+            dict: Thống kê số lượng dữ liệu đã xóa
+        """
         doc = await self.repo.get_by_id(doc_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu.")
 
-        # 1. Xóa trong DB (SQL CASCADE sẽ lo phần Graph Entities/Relations)
-        await self.repo.delete(doc_id)
-        
-        # 2. Xóa trong ChromaDB
+        # UF-010: Xóa ChromaDB TRƯỚC để đảm bảo atomic — nếu fail thì rollback toàn bộ
         try:
             chroma_client.delete_by_document_id(doc_id)
         except Exception as e:
-            logger.error(f"Failed to delete ChromaDB data for document {doc_id}: {e}")
+            # ChromaDB delete fail → KHÔNG xóa SQL để tránh orphan embeddings
+            logger.error(f"ChromaDB delete failed for document {doc_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Không thể xóa document: cleanup embeddings thất bại. Vui lòng thử lại sau. Lỗi: {str(e)}"
+            )
 
-        # 3. Xóa file vật lý
+        # ChromaDB thành công → xóa SQL (CASCADE lo entities, relations, chunks, flashcards, quizzes)
+        try:
+            await self.repo.delete(doc_id)
+            await self.session.commit()
+        except Exception as e:
+            # SQL delete fail → ChromaDB đã xóa trước, có thể orphan embeddings
+            await self.session.rollback()
+            logger.error(f"SQL delete failed for document {doc_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Không thể xóa document: database cleanup thất bại. Embeddings đã bị xóa. Lỗi: {str(e)}"
+            )
+
+        # Xóa file vật lý (không critical — nếu fail thì log và bỏ qua)
         if doc.file_path and os.path.exists(doc.file_path):
             try:
                 os.remove(doc.file_path)
             except Exception as e:
                 logger.error(f"Failed to delete file {doc.file_path}: {e}")
-        
-        await self.session.commit()
-        return True
+
+        return {
+            "message": "Document và toàn bộ dữ liệu liên quan đã được xóa",
+            "document_id": str(doc_id)
+        }

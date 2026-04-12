@@ -30,13 +30,16 @@ class GraphEntity(Base, TimestampMixin):
     __tablename__ = "graph_entities"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    document_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    # document_id kept for backward compatibility but NULLABLE now
+    # Use entity_documents junction table for many-to-many
+    document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     canonical_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
@@ -51,11 +54,14 @@ class GraphEntity(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("document_id", "canonical_name"),
         Index("idx_graph_entities_user_id", "user_id"),
         Index("idx_graph_entities_tags", "tags", postgresql_using="gin"),
         Index("idx_graph_entities_version", "version"),
     )
+
+    # Relationships
+    document_links = relationship("EntityDocument", back_populates="entity", cascade="all, delete-orphan")
+    note_links = relationship("NoteEntityLink", back_populates="entity", cascade="all, delete-orphan")
 
 
 class GraphRelation(Base, TimestampMixin):
@@ -83,6 +89,18 @@ class GraphRelation(Base, TimestampMixin):
     relation_type: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Confidence & Evidence (for quality filtering and explainability)
+    confidence: Mapped[float] = mapped_column(
+        Float,
+        nullable=True,
+        comment="Confidence score from LLM extraction (0.0 - 1.0)",
+    )
+    evidence: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Source text or reasoning for this relation",
+    )
+
     # Obsidian Integration columns
     source: Mapped[str] = mapped_column(String(50), default="ai_extracted", index=True)
     is_backlink: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -92,9 +110,9 @@ class GraphRelation(Base, TimestampMixin):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
     __table_args__ = (
-        UniqueConstraint(
-            "document_id", "source_entity_id", "target_entity_id", "relation_type",
-            name="uq_graph_relations_doc_source_target_type"
+        sa.CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_graph_relations_confidence_range",
         ),
         Index("idx_graph_relations_user_id", "user_id"),
         Index("idx_graph_relations_version", "version"),
