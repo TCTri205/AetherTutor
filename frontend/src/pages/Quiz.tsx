@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -150,8 +151,8 @@ export default function Quiz() {
                 <p className="text-2xl font-bold text-red-400">{result.wrong_count}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Tổng</p>
-                <p className="text-2xl font-bold text-white">{result.total_questions}</p>
+                <p className="text-xs text-secondary">Tổng</p>
+                <p className="text-2xl font-bold text-primary">{result.total_questions}</p>
               </div>
             </div>
           </CardContent>
@@ -161,7 +162,7 @@ export default function Quiz() {
         {result.weak_areas.length > 0 && (
           <Card className="border-orange-500/20">
             <CardContent className="p-6">
-              <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="font-bold text-primary mb-4 flex items-center gap-2">
                 <Target className="w-5 h-5 text-orange-400" />
                 Vùng cần cải thiện
               </h3>
@@ -178,10 +179,10 @@ export default function Quiz() {
 
         {/* Detailed Answers */}
         <div className="space-y-4">
-          <h3 className="font-bold text-white text-lg">Chi tiết từng câu</h3>
+          <h3 className="font-bold text-primary text-lg">Chi tiết từng câu</h3>
           {result.results.map((answer, i) => (
             <Card key={answer.question_id} className={cn(
-              'border-white/5',
+              'border-border-primary',
               answer.is_correct ? 'border-emerald-500/10' : 'border-red-500/10',
             )}>
               <CardContent className="p-5 space-y-3">
@@ -192,8 +193,8 @@ export default function Quiz() {
                       : <XCircle className="w-5 h-5 text-red-400 shrink-0" />
                     }
                     <div className="flex-1">
-                      <p className="font-semibold text-white text-sm">Câu {i + 1}: {answer.question_text}</p>
-                      <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                      <p className="font-semibold text-primary text-sm">Câu {i + 1}: {answer.question_text}</p>
+                      <div className="flex gap-4 mt-2 text-xs text-secondary">
                         <span>Loại: {answer.question_type}</span>
                         <span>Độ khó: {answer.difficulty}/5</span>
                         <span>Bloom: {answer.bloom_level}</span>
@@ -204,16 +205,16 @@ export default function Quiz() {
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-3">
                     <p className="text-[10px] text-red-400 uppercase mb-1">Trả lời</p>
-                    <p className="text-white">{answer.user_answer}</p>
+                    <p className="text-primary">{answer.user_answer}</p>
                   </div>
                   <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-lg p-3">
                     <p className="text-[10px] text-emerald-400 uppercase mb-1">Đáp án đúng</p>
-                    <p className="text-white">{answer.correct_answer}</p>
+                    <p className="text-primary">{answer.correct_answer}</p>
                   </div>
                 </div>
                 {answer.explanation && (
-                  <div className="bg-white/5 rounded-lg p-3 text-sm text-white/80">
-                    <p className="text-[10px] text-muted-foreground uppercase mb-1">Giải thích</p>
+                  <div className="bg-secondary rounded-lg p-3 text-sm text-secondary">
+                    <p className="text-[10px] text-secondary uppercase mb-1">Giải thích</p>
                     {answer.explanation}
                   </div>
                 )}
@@ -251,7 +252,7 @@ export default function Quiz() {
         </div>
 
         {/* Progress bar */}
-        <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+        <div className="w-full h-2 bg-secondary rounded-full overflow-hidden">
           <div
             className="h-full bg-primary transition-all duration-300 rounded-full"
             style={{ width: `${progress}%` }}
@@ -263,13 +264,13 @@ export default function Quiz() {
           <CardContent className="p-8 space-y-6">
             <div className="flex items-center gap-3">
               <Badge variant="outline">{question.question_type === 'multiple_choice' ? 'Trắc nghiệm' : 'Đúng/Sai'}</Badge>
-              <span className="text-xs text-muted-foreground">Độ khó: {question.difficulty}/5</span>
+              <span className="text-xs text-secondary">Độ khó: {question.difficulty}/5</span>
               {question.entity_name && (
-                <span className="text-xs text-muted-foreground">• {question.entity_name}</span>
+                <span className="text-xs text-secondary">• {question.entity_name}</span>
               )}
             </div>
 
-            <h3 className="text-xl font-bold text-white leading-relaxed">{question.question_text}</h3>
+            <h3 className="text-xl font-bold text-primary leading-relaxed">{question.question_text}</h3>
 
             {/* Options */}
             <div className="space-y-3">
@@ -279,8 +280,8 @@ export default function Quiz() {
                   className={cn(
                     'w-full text-left p-4 rounded-xl border transition-all text-sm',
                     currentAnswer === option
-                      ? 'border-primary bg-primary/10 text-white'
-                      : 'border-white/10 text-muted-foreground hover:border-white/20 hover:bg-white/5',
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border-primary text-secondary hover:border-secondary hover:bg-secondary',
                   )}
                   onClick={() => setAnswer(question.question_id, option)}
                 >
@@ -300,7 +301,7 @@ export default function Quiz() {
                           ? option === 'Đúng'
                             ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
                             : 'border-red-500 bg-red-500/10 text-red-400'
-                          : 'border-white/10 text-muted-foreground hover:border-white/20 hover:bg-white/5',
+                          : 'border-border-primary text-secondary hover:border-secondary hover:bg-secondary',
                       )}
                       onClick={() => setAnswer(question.question_id, option)}
                     >
@@ -361,14 +362,14 @@ export default function Quiz() {
 
         <Card className="border-primary/20">
           <CardContent className="p-8 space-y-6">
-            <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-primary flex items-center gap-3">
               <Sparkles className="w-6 h-6 text-primary" />
               Cấu hình Quiz
             </h2>
 
             {/* Document selector */}
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Tài liệu nguồn (tùy chọn)</label>
+              <label className="text-sm text-secondary mb-2 block">Tài liệu nguồn (tùy chọn)</label>
               <select
                 className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                 value={selectedDocId}
@@ -383,7 +384,7 @@ export default function Quiz() {
 
             {/* Number of questions */}
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">
+              <label className="text-sm text-secondary mb-2 block">
                 Số câu hỏi: {config.num_questions}
               </label>
               <input
@@ -394,7 +395,7 @@ export default function Quiz() {
                 onChange={(e) => setConfig({ ...config, num_questions: parseInt(e.target.value) })}
                 className="w-full accent-primary"
               />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
+              <div className="flex justify-between text-[10px] text-secondary">
                 <span>1</span>
                 <span>20</span>
               </div>
@@ -402,7 +403,7 @@ export default function Quiz() {
 
             {/* Question types */}
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">Loại câu hỏi</label>
+              <label className="text-sm text-secondary mb-2 block">Loại câu hỏi</label>
               <div className="flex gap-3">
                 {(['multiple_choice', 'true_false'] as QuizQuestionType[]).map((type) => (
                   <label
@@ -410,8 +411,8 @@ export default function Quiz() {
                     className={cn(
                       'flex-1 p-3 rounded-xl border cursor-pointer text-sm text-center transition-all',
                       config.question_types?.includes(type)
-                        ? 'border-primary bg-primary/10 text-white'
-                        : 'border-white/10 text-muted-foreground hover:border-white/20',
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border-primary text-secondary hover:border-secondary',
                     )}
                   >
                     <input
@@ -433,7 +434,7 @@ export default function Quiz() {
 
             {/* Difficulty */}
             <div>
-              <label className="text-sm text-muted-foreground mb-2 block">
+              <label className="text-sm text-secondary mb-2 block">
                 Độ khó: {config.difficulty}/5
               </label>
               <div className="flex gap-2">
@@ -443,8 +444,8 @@ export default function Quiz() {
                     className={cn(
                       'flex-1 py-2 rounded-lg border text-sm font-bold transition-all',
                       config.difficulty === d
-                        ? 'border-primary bg-primary/20 text-white'
-                        : 'border-white/10 text-muted-foreground hover:border-white/20',
+                        ? 'border-primary bg-primary/20 text-primary'
+                        : 'border-border-primary text-secondary hover:border-secondary',
                     )}
                     onClick={() => setConfig({ ...config, difficulty: d })}
                   >
@@ -474,11 +475,11 @@ export default function Quiz() {
       {/* Header */}
       <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2">
-          <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+          <h2 className="text-3xl font-bold text-primary tracking-tight flex items-center gap-3">
             <FileQuestion className="w-8 h-8 text-primary" />
             Quiz Examiner
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-secondary">
             Kiểm tra kiến thức với AI-generated quizzes.
           </p>
         </div>
@@ -497,12 +498,12 @@ export default function Quiz() {
             { label: 'Đã trả lời', value: stats.total_questions_answered, icon: BookOpen, color: 'text-emerald-400' },
             { label: 'Chính xác', value: `${stats.overall_accuracy.toFixed(0)}%`, icon: Target, color: 'text-purple-400' },
           ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="border-white/5 bg-white/[0.02]">
+            <Card key={label} className="border-border-primary bg-secondary">
               <CardContent className="p-4 flex items-center gap-3">
                 <Icon className={cn('w-5 h-5', color)} />
                 <div>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-xl font-bold text-white">{value}</p>
+                  <p className="text-xs text-secondary">{label}</p>
+                  <p className="text-xl font-bold text-primary">{value}</p>
                 </div>
               </CardContent>
             </Card>
@@ -514,7 +515,7 @@ export default function Quiz() {
       {weakAreas.length > 0 && (
         <Card className="border-orange-500/20">
           <CardContent className="p-6">
-            <h3 className="font-bold text-white mb-3 flex items-center gap-2">
+            <h3 className="font-bold text-primary mb-3 flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-orange-400" />
               Vùng kiến thức cần cải thiện
             </h3>
@@ -531,21 +532,21 @@ export default function Quiz() {
 
       {/* Quiz List */}
       <div className="space-y-4">
-        <h3 className="font-bold text-white text-lg">Quiz đã tạo</h3>
+        <h3 className="font-bold text-primary text-lg">Quiz đã tạo</h3>
         {isLoading && quizzes.length === 0
           ? Array.from({ length: 3 }).map((_, i) => (
-              <Card key={i} className="h-20 border-white/5">
+              <Card key={i} className="h-20 border-border-primary">
                 <CardContent className="p-5 animate-pulse">
-                  <div className="h-4 bg-white/10 rounded w-1/3" />
+                  <div className="h-4 bg-tertiary rounded w-1/3" />
                 </CardContent>
               </Card>
             ))
           : quizzes.map((quiz) => (
-              <Card key={quiz.id} className="border-white/5 hover:border-primary/20 transition-all group">
+              <Card key={quiz.id} className="border-border-primary hover:border-primary/20 transition-all group">
                 <CardContent className="p-5 flex items-center justify-between">
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-white truncate">{quiz.title}</h4>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+                    <h4 className="font-bold text-primary truncate">{quiz.title}</h4>
+                    <div className="flex items-center gap-4 text-xs text-secondary mt-1">
                       <span>{quiz.num_questions} câu hỏi</span>
                       <span>Độ khó: {quiz.difficulty}/5</span>
                       <span className="flex items-center gap-1">
@@ -566,13 +567,13 @@ export default function Quiz() {
 
       {/* Empty state */}
       {!isLoading && quizzes.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-3xl gap-6">
-          <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-            <FileQuestion className="w-10 h-10 text-muted-foreground opacity-30" />
+        <div className="flex flex-col items-center justify-center py-20 bg-secondary border-2 border-dashed border-border-primary rounded-3xl gap-6">
+          <div className="w-20 h-20 rounded-full bg-tertiary flex items-center justify-center border border-border-primary">
+            <FileQuestion className="w-10 h-10 text-tertiary opacity-30" />
           </div>
           <div className="text-center space-y-2">
-            <p className="text-white font-bold text-lg">Chưa có quiz nào</p>
-            <p className="text-muted-foreground">Tạo quiz mới để kiểm tra kiến thức của bạn.</p>
+            <p className="text-primary font-bold text-lg">Chưa có quiz nào</p>
+            <p className="text-secondary">Tạo quiz mới để kiểm tra kiến thức của bạn.</p>
           </div>
           <Button size="lg" onClick={() => setPhase('config')}>
             <Sparkles className="w-4 h-4 mr-2" />

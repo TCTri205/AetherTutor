@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { graphService } from '../services/graph';
@@ -177,34 +178,34 @@ export default function GlobalGraphExplorer() {
   }, [graphData]);
 
   return (
-    <div className="flex h-full overflow-hidden bg-[#020617] rounded-3xl border border-white/5 relative">
+    <div className="flex h-full overflow-hidden bg-primary rounded-3xl border border-border-primary relative">
       <div className="flex-1 relative">
         {/* Header Overlay */}
         <div className="absolute top-6 left-6 z-10 flex items-center gap-4 pointer-events-none">
-          <Card className="glass px-6 py-4 border-white/10 shadow-2xl flex items-center gap-6 pointer-events-auto">
-            <div className="flex items-center gap-3 pr-6 border-r border-white/10 font-bold text-white tracking-tight">
+          <Card className="glass px-6 py-4 border-border-primary shadow-2xl flex items-center gap-6 pointer-events-auto">
+            <div className="flex items-center gap-3 pr-6 border-r border-border-primary font-bold text-primary tracking-tight">
               <Globe className="w-5 h-5 text-primary" />
               Bản Đồ Tri Thức Toàn Cục
             </div>
             <div className="flex items-center gap-4">
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Hiển thị</span>
-                <span className="text-sm font-bold text-white/90">
+                <span className="text-[10px] text-secondary font-bold uppercase tracking-widest">Hiển thị</span>
+                <span className="text-sm font-bold text-primary">
                   {graphData.nodes.length} Nút • {graphData.links.length} Cạnh
                 </span>
               </div>
 
               {/* Tag Selection */}
               {allTags.length > 0 && (
-                <div className="flex items-center gap-2 pl-4 border-l border-white/10 shrink-0">
+                <div className="flex items-center gap-2 pl-4 border-l border-border-primary shrink-0">
                   <select
-                    className="bg-transparent text-xs text-white border-none focus:outline-none cursor-pointer"
+                    className="bg-transparent text-xs text-primary border-none focus:outline-none cursor-pointer"
                     value={selectedTag || ''}
                     onChange={(e) => setSelectedTag(e.target.value || null)}
                   >
-                    <option value="" className="bg-[#020617]">Tất cả thẻ</option>
+                    <option value="" className="bg-primary">Tất cả thẻ</option>
                     {allTags.map(tag => (
-                      <option key={tag} value={tag} className="bg-[#020617]">#{tag}</option>
+                      <option key={tag} value={tag} className="bg-primary">#{tag}</option>
                     ))}
                   </select>
                 </div>
@@ -279,10 +280,10 @@ export default function GlobalGraphExplorer() {
 
         {/* Help text */}
         <div className="absolute bottom-6 left-6 z-10 pointer-events-none">
-          <Card className="glass flex items-center gap-3 px-4 py-2 border-white/10 shadow-2xl">
+          <Card className="glass flex items-center gap-3 px-4 py-2 border-border-primary shadow-2xl">
             <div className="flex items-center gap-2">
               <MousePointer2 className="w-3.5 h-3.5 text-primary" />
-              <span className="text-[10px] font-bold text-white uppercase tracking-widest">
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
                 Kéo để di chuyển • Cuộn để phóng to • Click nút để xem chi tiết
               </span>
             </div>
@@ -301,11 +302,11 @@ export default function GlobalGraphExplorer() {
           />
         ) : !isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
-            <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-              <Globe className="w-10 h-10 text-muted-foreground/40" />
+            <div className="w-20 h-20 rounded-3xl bg-secondary border border-border-primary flex items-center justify-center mb-6">
+              <Globe className="w-10 h-10 text-tertiary" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Chưa có đồ thị toàn cục</h3>
-            <p className="text-muted-foreground text-sm max-w-md">
+            <h3 className="text-xl font-bold text-primary mb-2">Chưa có đồ thị toàn cục</h3>
+            <p className="text-secondary text-sm max-w-md">
               Hãy xử lý nhiều tài liệu để xây dựng đồ thị tri thức liên văn bản.
             </p>
           </div>
@@ -313,9 +314,9 @@ export default function GlobalGraphExplorer() {
 
         {/* Loading Overlay */}
         {isLoading && (
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4">
+          <div className="absolute inset-0 bg-overlay backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-4">
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
-            <span className="font-bold text-white tracking-widest uppercase text-xs animate-pulse">Đang ánh xạ tri thức toàn cục...</span>
+            <span className="font-bold text-primary tracking-widest uppercase text-xs animate-pulse">Đang ánh xạ tri thức toàn cục...</span>
           </div>
         )}
       </div>
@@ -330,16 +331,16 @@ export default function GlobalGraphExplorer() {
 
       {/* Advanced Panels (Alias Manager & Multi Query) */}
       {activePanel && (
-        <div className="absolute inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-md p-6">
-          <Card className="glass w-full max-w-4xl max-h-[90vh] flex flex-col border-white/10 shadow-2xl relative overflow-hidden">
-             <div className="flex items-center justify-between p-6 border-b border-white/5">
-                <h3 className="text-xl font-bold text-white flex items-center gap-3">
+        <div className="absolute inset-0 z-[110] flex items-center justify-center bg-overlay backdrop-blur-md p-6">
+          <Card className="glass w-full max-w-4xl max-h-[90vh] flex flex-col border-border-primary shadow-2xl relative overflow-hidden">
+             <div className="flex items-center justify-between p-6 border-b border-border-primary">
+                <h3 className="text-xl font-bold text-primary flex items-center gap-3">
                   {activePanel === 'aliases' && <><Users className="w-6 h-6 text-primary" />Quản lý Bí danh</>}
                   {activePanel === 'multi-query' && <><Layers className="w-6 h-6 text-primary" />Truy vấn Đa tài liệu</>}
                 </h3>
-                <button 
+                <button
                   onClick={() => setActivePanel(null)}
-                  className="text-muted-foreground hover:text-white"
+                  className="text-secondary hover:text-primary"
                 >
                   <X className="w-5 h-5" />
                 </button>

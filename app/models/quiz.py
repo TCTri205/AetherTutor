@@ -73,9 +73,10 @@ class QuizResult(Base, TimestampMixin):
     )
     score: Mapped[float] = mapped_column(
         Float, nullable=False, default=0.0, server_default="0.0"
-    )  # Percentage 0-100
+    )  # Percentage 0-100 (e.g., 85.5 = 85.5%)
     total_questions: Mapped[int] = mapped_column(Integer, nullable=False)
     correct_answers: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Number of correctly answered questions (for exact count display)
     weak_areas: Mapped[dict] = mapped_column(JSON, default=list, server_default="[]")
     # List of entity names user struggled with
 
@@ -133,6 +134,9 @@ class QuizAnswer(Base, TimestampMixin):
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     entity_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Entity liên quan để tính weak areas
+    bloom_level: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default="remember", server_default="'remember'"
+    )
     difficulty: Mapped[int] = mapped_column(
         Integer, nullable=False, default=3, server_default="3"
     )

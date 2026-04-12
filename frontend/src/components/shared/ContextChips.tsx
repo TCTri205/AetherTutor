@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { motion } from 'framer-motion';
 import { Share2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';

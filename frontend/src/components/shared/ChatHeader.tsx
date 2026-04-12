@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { Brain, Star, Settings, ChevronLeft, LayoutPanelLeft } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
@@ -16,7 +17,7 @@ export default function ChatHeader({ documentId, filename, mode, setMode }: Chat
   const navigate = useNavigate();
 
   return (
-    <header className="h-16 border-b border-white/5 flex items-center justify-between px-6 z-10 glass-dark">
+    <header className="h-16 border-b border-border-primary flex items-center justify-between px-6 z-10 glass-dark">
       <div className="flex items-center gap-4 flex-1">
         <Button
           variant="ghost"
@@ -24,23 +25,23 @@ export default function ChatHeader({ documentId, filename, mode, setMode }: Chat
           onClick={() => navigate('/vault')}
           className="rounded-xl"
         >
-          <ChevronLeft className="w-5 h-5 text-muted-foreground" />
+          <ChevronLeft className="w-5 h-5 text-secondary" />
         </Button>
-        <div className="w-[1px] h-6 bg-white/10 hidden sm:block" />
+        <div className="w-[1px] h-6 bg-border-primary hidden sm:block" />
         <div className="flex flex-col min-w-0 max-w-sm md:max-w-md">
            <span className="text-[10px] font-bold text-primary tracking-[0.15em] uppercase leading-none">Conversation Context</span>
-           <h2 className="text-sm font-bold text-white truncate">{filename}</h2>
+           <h2 className="text-sm font-bold text-primary truncate">{filename}</h2>
         </div>
       </div>
 
       {/* S6.10: MVP Scope — Only Feynman active, Socratic disabled */}
-      <div className="flex items-center gap-4 bg-white/5 p-1 rounded-2xl border border-white/5">
+      <div className="flex items-center gap-4 bg-secondary p-1 rounded-2xl border border-border-primary">
         <button
           onClick={() => {
             toast.info('Socratic Mode coming soon in v2', { duration: 2000 });
           }}
           disabled
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all text-muted-foreground/50 cursor-not-allowed relative group"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all text-secondary/50 cursor-not-allowed relative group"
           title="Coming soon in v2"
         >
           <Brain className="w-4 h-4" />
@@ -66,7 +67,7 @@ export default function ChatHeader({ documentId, filename, mode, setMode }: Chat
 
       <div className="flex items-center gap-2 ml-4 md:ml-0">
         <Button variant="ghost" size="icon" className="rounded-xl" onClick={() => navigate(`/graph/${documentId}`)}>
-           <LayoutPanelLeft className="w-5 h-5 text-muted-foreground hover:text-emerald-500 transition-colors" />
+           <LayoutPanelLeft className="w-5 h-5 text-secondary hover:text-emerald-500 transition-colors" />
         </Button>
         <Button
           variant="ghost"
@@ -74,7 +75,7 @@ export default function ChatHeader({ documentId, filename, mode, setMode }: Chat
           className="rounded-xl"
           onClick={() => toast.info('Settings page coming soon in v2', { duration: 2000 })}
         >
-           <Settings className="w-5 h-5 text-muted-foreground" />
+           <Settings className="w-5 h-5 text-secondary" />
         </Button>
       </div>
     </header>

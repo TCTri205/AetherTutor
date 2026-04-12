@@ -43,6 +43,10 @@ class Flashcard(Base, TimestampMixin):
     sm2_next_review: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, server_default="NOW()"
     )
+    sm2_last_review: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True,
+        comment="Timestamp of the last review (for tracking & analytics)"
+    )
     
     # Source: manual, quiz_wrong_answer, auto_generated
     source: Mapped[str] = mapped_column(

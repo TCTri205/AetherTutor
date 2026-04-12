@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -80,9 +81,9 @@ export default function ConversationList({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-white/5">
+      <div className="px-4 py-3 border-b border-border-primary">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+          <h3 className="text-xs font-bold text-secondary uppercase tracking-widest">
             Cuộc hội thoại
           </h3>
           <button
@@ -103,8 +104,8 @@ export default function ConversationList({
           </div>
         ) : conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-            <MessageSquare className="w-8 h-8 text-muted-foreground/30 mb-2" />
-            <p className="text-xs text-muted-foreground">
+            <MessageSquare className="w-8 h-8 text-tertiary mb-2" />
+            <p className="text-xs text-secondary">
               Chưa có cuộc hội thoại nào
             </p>
           </div>
@@ -138,7 +139,7 @@ export default function ConversationList({
                         "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all group relative cursor-pointer",
                         isActive
                           ? "bg-primary/10 text-primary border border-primary/20"
-                          : "text-white/70 hover:bg-white/5 hover:text-white border border-transparent",
+                          : "text-secondary hover:bg-secondary hover:text-primary border border-transparent",
                         isDeleting && "opacity-50 pointer-events-none"
                       )}
                     >
@@ -147,7 +148,7 @@ export default function ConversationList({
                         "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
                         isActive
                           ? "bg-primary/20 text-primary"
-                          : "bg-white/5 text-muted-foreground group-hover:text-white"
+                          : "bg-secondary text-secondary group-hover:text-primary"
                       )}>
                         {isDeleting ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
@@ -161,7 +162,7 @@ export default function ConversationList({
                         <p className="text-sm font-medium truncate">
                           {getTitle(conv, index)}
                         </p>
-                        <p className="text-[10px] text-muted-foreground/60">
+                        <p className="text-[10px] text-secondary/60">
                           {new Date(conv.created_at).toLocaleDateString('vi-VN')}
                         </p>
                       </div>
@@ -191,8 +192,8 @@ export default function ConversationList({
 
       {/* Footer Stats */}
       {conversations.length > 0 && (
-        <div className="px-4 py-2 border-t border-white/5">
-          <p className="text-[10px] text-muted-foreground text-center">
+        <div className="px-4 py-2 border-t border-border-primary">
+          <p className="text-[10px] text-secondary text-center">
             {conversations.length} cuộc hội thoại
           </p>
         </div>

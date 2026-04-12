@@ -6,6 +6,9 @@ Supports both JWT Bearer and X-User-Id header during transition.
 """
 from __future__ import annotations
 
+import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request, status
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +21,8 @@ from app.constants import (
     RATE_LIMIT_REFRESH,
     RATE_LIMIT_LOGOUT,
 )
+from app.core.exceptions import AppError
+from app.repositories.user import UserRepository
 from app.schemas.auth import (
     RegisterRequest,
     RegisterResponse,
@@ -30,11 +35,26 @@ from app.schemas.auth import (
     SessionInfo,
     ActiveSessionsResponse,
 )
+from app.schemas.auth_extended import (
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    VerifyEmailRequest,
+    ResendVerificationRequest,
+    MessageResponse,
+    PasswordResetResponse,
+    EmailVerificationResponse,
+)
 from app.services.auth_service import AuthService
-from app.services.security import decode_token
-from app.core.exceptions import AppError
-
-import uuid
+from app.services.security import decode_token, hash_password
+from app.services.email_service import (
+    generate_verification_token,
+    generate_password_reset_token,
+    decode_email_token,
+    VERIFICATION_TOKEN_TYPE,
+    PASSWORD_RESET_TOKEN_TYPE,
+    send_verification_email,
+    send_password_reset_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -205,3 +225,206 @@ async def list_sessions(
         )
 
     return ActiveSessionsResponse(sessions=session_infos)
+
+
+# ---------------------------------------------------------------------------
+# Email Verification & Password Reset Endpoints
+# ---------------------------------------------------------------------------
+
+# Rate limit constant for auth email endpoints (not in constants.py yet, use inline)
+RATE_LIMIT_AUTH_EMAIL = "10/minute"
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Request password reset email",
+)
+@limiter.limit(RATE_LIMIT_AUTH_EMAIL)
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a password reset token and send email to the user.
+
+    Always returns 200 even if email doesn't exist (security: prevents email enumeration).
+    Token expires in 1 hour.
+    """
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_email(body.email)
+
+    if user:
+        try:
+            token = generate_password_reset_token(str(user.id), user.email)
+            await send_password_reset_email(user.email, token)
+            logger.info(f"Password reset email sent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to send password reset email: {e}")
+            raise AppError(
+                message="Failed to send password reset email. Please try again later.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                error_code="EMAIL_SEND_FAILED",
+            )
+
+    # Always return success to prevent email enumeration
+    return MessageResponse(
+        message="If an account with that email exists, a password reset link has been sent."
+    )
+
+
+@router.post(
+    "/reset-password",
+    response_model=PasswordResetResponse,
+    summary="Reset password with token",
+)
+@limiter.limit(RATE_LIMIT_AUTH_EMAIL)
+async def reset_password(
+    request: Request,
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Validate the password reset token and update the password.
+
+    Token expires in 1 hour and is single-use.
+    """
+    try:
+        payload = decode_email_token(body.token, PASSWORD_RESET_TOKEN_TYPE)
+    except ValueError as e:
+        raise AppError(
+            message=str(e),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="INVALID_RESET_TOKEN",
+        )
+
+    user_id = uuid.UUID(payload["sub"])
+    token_email = payload["email"]
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+
+    if not user or user.email != token_email:
+        raise AppError(
+            message="Invalid reset token.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="INVALID_RESET_TOKEN",
+        )
+
+    if not user.is_active:
+        raise AppError(
+            message="Account is deactivated.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code="ACCOUNT_DEACTIVATED",
+        )
+
+    # Hash and update password
+    hashed = hash_password(body.new_password)
+    await user_repo.update(user_id, hashed_password=hashed)
+    await db.commit()
+
+    logger.info(f"Password reset successfully for user {user_id}")
+
+    return PasswordResetResponse(
+        message="Password has been reset successfully.",
+        user_id=str(user_id),
+    )
+
+
+@router.post(
+    "/verify-email",
+    response_model=EmailVerificationResponse,
+    summary="Verify email with token",
+)
+@limiter.limit(RATE_LIMIT_AUTH_EMAIL)
+async def verify_email(
+    request: Request,
+    body: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Validate the email verification token and mark the user as verified.
+
+    Token expires in 24 hours.
+    """
+    try:
+        payload = decode_email_token(body.token, VERIFICATION_TOKEN_TYPE)
+    except ValueError as e:
+        raise AppError(
+            message=str(e),
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="INVALID_VERIFICATION_TOKEN",
+        )
+
+    user_id = uuid.UUID(payload["sub"])
+    token_email = payload["email"]
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_id(user_id)
+
+    if not user or user.email != token_email:
+        raise AppError(
+            message="Invalid verification token.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error_code="INVALID_VERIFICATION_TOKEN",
+        )
+
+    if user.email_verified:
+        return EmailVerificationResponse(
+            message="Email is already verified.",
+            email_verified=True,
+            user_id=str(user_id),
+        )
+
+    # Mark as verified
+    await user_repo.verify_email(user_id)
+    await db.commit()
+
+    logger.info(f"Email verified for user {user_id}")
+
+    return EmailVerificationResponse(
+        message="Email verified successfully.",
+        email_verified=True,
+        user_id=str(user_id),
+    )
+
+
+@router.post(
+    "/resend-verification",
+    response_model=MessageResponse,
+    summary="Resend verification email",
+)
+@limiter.limit(RATE_LIMIT_AUTH_EMAIL)
+async def resend_verification(
+    request: Request,
+    body: ResendVerificationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Resend the email verification link.
+
+    Only sends if the user exists and is not yet verified.
+    Always returns 200 to prevent email enumeration.
+    """
+    user_repo = UserRepository(db)
+    user = await user_repo.get_by_email(body.email)
+
+    if user and not user.email_verified:
+        try:
+            token = generate_verification_token(str(user.id), user.email)
+            await send_verification_email(user.email, token)
+            logger.info(f"Verification email resent to {user.email}")
+        except Exception as e:
+            logger.error(f"Failed to resend verification email: {e}")
+            raise AppError(
+                message="Failed to send verification email. Please try again later.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                error_code="EMAIL_SEND_FAILED",
+            )
+
+    # Always return success to prevent email enumeration
+    return MessageResponse(
+        message="If an account with that email exists and is not verified, "
+                "a verification link has been sent."
+    )

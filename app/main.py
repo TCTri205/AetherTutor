@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import settings
-from .api import documents, chat, graph, flashcards, quiz, notes, auth, users, topics
+from .api import documents, chat, graph, flashcards, quiz, notes, auth, users, topics, agents, collaboration, push
 from .api.limiter import limiter
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
@@ -12,6 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from .logging_config import setup_logging, get_logger
 from .middleware import RequestLoggingMiddleware
 from .core.exceptions import AppError
+from .api.websocket_handlers import router as ws_router
 
 # Setup logging
 setup_logging(
@@ -162,8 +163,14 @@ app.include_router(flashcards.router, prefix="/api/v1")
 app.include_router(quiz.router, prefix="/api/v1")
 app.include_router(notes.router, prefix="/api/v1")
 
-# NEW: Auth, Users, Topics routers (v1.2)
+# NEW: Auth, Users, Topics, Agents, Collaboration routers
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
 app.include_router(topics.router, prefix="/api/v1")
+app.include_router(agents.router, prefix="/api/v1")
+app.include_router(collaboration.router, prefix="/api/v1")
+app.include_router(push.router, prefix="/api/v1")
+
+# WebSocket router (no /api/v1 prefix for WebSocket)
+app.include_router(ws_router)
 

@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Send, Sparkles, Brain, Loader2, Star, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
@@ -78,10 +79,10 @@ export default function Chat() {
   if (!doc) return null; // Handled by DocumentGuard but safe check
 
   return (
-    <div className="flex h-full overflow-hidden bg-[#020617] rounded-3xl border border-white/5 relative">
+    <div className="flex h-full overflow-hidden bg-primary rounded-3xl border border-border-primary relative">
       {/* Conversation List Sidebar */}
       {sidebarOpen && (
-        <div className="w-64 border-r border-white/5 bg-black/20 flex flex-col shrink-0">
+        <div className="w-64 border-r border-border-primary bg-secondary flex flex-col shrink-0">
           <ConversationList
             documentId={documentId!}
             activeConversationId={currentConversationId}
@@ -97,7 +98,7 @@ export default function Chat() {
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           aria-label={sidebarOpen ? "Hide conversation list" : "Show conversation list"}
-          className="absolute left-2 top-20 z-20 p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+          className="absolute left-2 top-20 z-20 p-2 rounded-xl bg-secondary border border-border-primary hover:bg-tertiary transition-colors"
         >
           {sidebarOpen ? (
             <PanelLeftClose className="w-4 h-4 text-muted-foreground" />
@@ -130,11 +131,11 @@ export default function Chat() {
                     <Sparkles className="absolute -top-2 -right-2 w-6 h-6 text-amber-400 animate-pulse" />
                  </div>
                  <div className="space-y-4">
-                    <h3 className="text-3xl font-bold text-white tracking-tight">Xin chào, tôi là AI Tutor của bạn</h3>
-                    <p className="text-muted-foreground leading-relaxed text-lg italic">
+                    <h3 className="text-3xl font-bold text-primary tracking-tight">Xin chào, tôi là AI Tutor của bạn</h3>
+                    <p className="text-secondary leading-relaxed text-lg italic">
                       "Giáo dục là việc thắp sáng một ngọn lửa, không phải là việc làm đầy một chiếc bình."
                     </p>
-                    <p className="text-muted-foreground text-sm max-w-md mx-auto">
+                    <p className="text-secondary text-sm max-w-md mx-auto">
                       Tôi đã chuẩn bị sẵn sàng kiến thức từ tài liệu <b>"{doc.filename}"</b>. Hãy bắt đầu cuộc hội thoại!
                     </p>
                  </div>
@@ -185,7 +186,7 @@ export default function Chat() {
         </div>
 
         {/* Input Area */}
-        <div className="p-6 border-t border-white/5 glass-dark z-10 shrink-0">
+        <div className="p-6 border-t border-border-primary glass-dark z-10 shrink-0">
           <div className="max-w-4xl mx-auto relative group">
             <textarea
               rows={1}
@@ -200,7 +201,7 @@ export default function Chat() {
               placeholder={mode === 'socratic' ? "Yêu cầu Tutor đặt câu hỏi gợi mở..." : "Hỏi để được giải thích theo phong cách Feynman..."}
               aria-label="Type your message"
               aria-describedby="chat-input-hint"
-              className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pr-14 pl-12 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all resize-none group-focus-within:bg-white/10"
+              className="w-full bg-secondary border border-border-primary rounded-2xl py-4 pr-14 pl-12 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/50 transition-all resize-none group-focus-within:bg-tertiary"
               style={{ minHeight: '56px', maxHeight: '200px' }}
             />
             <div className="absolute left-4 top-4">
@@ -222,7 +223,7 @@ export default function Chat() {
             </Button>
 
             <div className="mt-2 flex justify-between items-center px-2">
-               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Shift + Enter for new line</span>
+               <span className="text-[10px] font-bold text-secondary uppercase tracking-widest">Shift + Enter for new line</span>
                <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5">
                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />

@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -145,8 +146,8 @@ export default function Flashcards() {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-8">
           <div className="text-center space-y-4">
-            <h2 className="text-3xl font-bold text-white">Ôn tập Flashcard</h2>
-            <p className="text-muted-foreground">
+            <h2 className="text-3xl font-bold text-primary">Ôn tập Flashcard</h2>
+            <p className="text-secondary">
               {dueCards.length === 0
                 ? 'Không có thẻ cần ôn tập. Thêm thẻ mới hoặc tạo từ tài liệu.'
                 : 'Đã ôn hết các thẻ cần review!'}
@@ -198,11 +199,11 @@ export default function Flashcards() {
                 className="absolute inset-0"
                 style={{ backfaceVisibility: 'hidden' }}
               >
-                <Card className="h-full border-primary/20 bg-gradient-to-br from-white/5 to-white/[0.02]">
+                <Card className="h-full border-primary/20 bg-gradient-to-br from-secondary to-tertiary">
                   <CardContent className="flex flex-col items-center justify-center h-full p-12 text-center">
                     <Badge variant="outline" className="mb-6">{SOURCE_LABELS[card.source]}</Badge>
-                    <h3 className="text-2xl font-bold text-white leading-relaxed">{card.front}</h3>
-                    <p className="text-sm text-muted-foreground mt-8">Click để xem đáp án</p>
+                    <h3 className="text-2xl font-bold text-primary leading-relaxed">{card.front}</h3>
+                    <p className="text-sm text-secondary mt-8">Click để xem đáp án</p>
                   </CardContent>
                 </Card>
               </div>
@@ -212,11 +213,11 @@ export default function Flashcards() {
                 className="absolute inset-0"
                 style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden' }}
               >
-                <Card className="h-full border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-white/[0.02]">
+                <Card className="h-full border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-tertiary">
                   <CardContent className="flex flex-col items-center justify-center h-full p-12 text-center">
                     <Badge variant="success" className="mb-6">Đáp án</Badge>
-                    <p className="text-xl text-white/90 leading-relaxed whitespace-pre-wrap">{card.back}</p>
-                    <div className="flex gap-6 mt-8 text-xs text-muted-foreground">
+                    <p className="text-xl text-primary leading-relaxed whitespace-pre-wrap">{card.back}</p>
+                    <div className="flex gap-6 mt-8 text-xs text-secondary">
                       <span>Ease: {card.sm2_ease_factor.toFixed(1)}</span>
                       <span>Interval: {card.sm2_interval}d</span>
                       <span>Reps: {card.sm2_repetitions}</span>
@@ -248,7 +249,7 @@ export default function Flashcards() {
                       onClick={() => handleReview(quality)}
                     >
                       <span className={cn('font-bold text-sm', color)}>{label}</span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[10px] text-secondary">
                         {quality}
                       </span>
                     </Button>
@@ -268,11 +269,11 @@ export default function Flashcards() {
       {/* Header */}
       <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2">
-          <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+          <h2 className="text-3xl font-bold text-primary tracking-tight flex items-center gap-3">
             <Brain className="w-8 h-8 text-primary" />
             Flashcard SM-2
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-secondary">
             Hệ thống lặp lại ngắt quãng — tối ưu ghi nhớ dài hạn.
           </p>
         </div>
@@ -297,12 +298,12 @@ export default function Flashcards() {
             { label: 'Đã ôn', value: stats.total_reviews, icon: CheckCircle, color: 'text-emerald-400' },
             { label: 'Streak', value: `${stats.streak_days} ngày`, icon: Zap, color: 'text-yellow-400' },
           ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="border-white/5 bg-white/[0.02]">
+            <Card key={label} className="border-border-primary bg-secondary">
               <CardContent className="p-4 flex items-center gap-3">
                 <Icon className={cn('w-5 h-5', color)} />
                 <div>
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-xl font-bold text-white">{value}</p>
+                  <p className="text-xs text-secondary">{label}</p>
+                  <p className="text-xl font-bold text-primary">{value}</p>
                 </div>
               </CardContent>
             </Card>
@@ -319,8 +320,8 @@ export default function Flashcards() {
                 <Play className="w-6 h-6 text-primary" />
               </div>
               <div>
-                <p className="font-bold text-white">{dueCards.length} thẻ cần ôn tập</p>
-                <p className="text-sm text-muted-foreground">Bắt đầu review để duy trì streak</p>
+                <p className="font-bold text-primary">{dueCards.length} thẻ cần ôn tập</p>
+                <p className="text-sm text-secondary">Bắt đầu review để duy trì streak</p>
               </div>
             </div>
             <Button size="lg" className="bg-primary hover:bg-primary/80" onClick={handleStartReview}>
@@ -333,18 +334,18 @@ export default function Flashcards() {
 
       {/* Create Dialog */}
       {showCreateDialog && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="w-full max-w-lg"
           >
-            <Card className="border-white/10">
+            <Card className="border-border-primary">
               <CardContent className="p-6 space-y-4">
-                <h3 className="text-xl font-bold text-white">Tạo Flashcard mới</h3>
+                <h3 className="text-xl font-bold text-primary">Tạo Flashcard mới</h3>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-sm text-muted-foreground mb-1 block">Mặt trước (Câu hỏi)</label>
+                    <label className="text-sm text-secondary mb-1 block">Mặt trước (Câu hỏi)</label>
                     <textarea
                       className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                       rows={3}
@@ -354,7 +355,7 @@ export default function Flashcards() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-muted-foreground mb-1 block">Mặt sau (Đáp án)</label>
+                    <label className="text-sm text-secondary mb-1 block">Mặt sau (Đáp án)</label>
                     <textarea
                       className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
                       rows={4}
@@ -364,7 +365,7 @@ export default function Flashcards() {
                     />
                   </div>
                   <div>
-                    <label className="text-sm text-muted-foreground mb-1 block">Nguồn</label>
+                    <label className="text-sm text-secondary mb-1 block">Nguồn</label>
                     <select
                       className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                       value={createForm.source}
@@ -392,18 +393,18 @@ export default function Flashcards() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {isLoading && cards.length === 0
           ? Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="h-40 border-white/5">
+              <Card key={i} className="h-40 border-border-primary">
                 <CardContent className="p-6 animate-pulse">
-                  <div className="h-4 bg-white/10 rounded w-3/4 mb-3" />
-                  <div className="h-3 bg-white/5 rounded w-1/2" />
+                  <div className="h-4 bg-tertiary rounded w-3/4 mb-3" />
+                  <div className="h-3 bg-secondary rounded w-1/2" />
                 </CardContent>
               </Card>
             ))
           : cards.map((card) => (
-              <Card key={card.id} className="border-white/5 hover:border-primary/20 transition-all group">
+              <Card key={card.id} className="border-border-primary hover:border-primary/20 transition-all group">
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-start justify-between">
-                    <h4 className="font-semibold text-white text-sm line-clamp-2 flex-1">{card.front}</h4>
+                    <h4 className="font-semibold text-primary text-sm line-clamp-2 flex-1">{card.front}</h4>
                     <div className="flex gap-1 ml-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setCurrentCard(card); setViewMode('review'); }}>
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -413,15 +414,15 @@ export default function Flashcards() {
                       </Button>
                     </div>
                   </div>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{card.back}</p>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <p className="text-xs text-secondary line-clamp-2">{card.back}</p>
+                  <div className="flex items-center justify-between text-[10px] text-secondary">
                     <Badge variant="outline" className="text-[10px]">{SOURCE_LABELS[card.source]}</Badge>
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       {formatDistanceToNow(new Date(card.sm2_next_review), { locale: vi })}
                     </span>
                   </div>
-                  <div className="flex gap-2 text-[10px] text-muted-foreground">
+                  <div className="flex gap-2 text-[10px] text-secondary">
                     <span>Ease: {card.sm2_ease_factor.toFixed(1)}</span>
                     <span>•</span>
                     <span>Interval: {card.sm2_interval}d</span>
@@ -435,13 +436,13 @@ export default function Flashcards() {
 
       {/* Empty state */}
       {!isLoading && cards.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-3xl gap-6">
-          <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-            <Brain className="w-10 h-10 text-muted-foreground opacity-30" />
+        <div className="flex flex-col items-center justify-center py-20 bg-secondary border-2 border-dashed border-border-primary rounded-3xl gap-6">
+          <div className="w-20 h-20 rounded-full bg-tertiary flex items-center justify-center border border-border-primary">
+            <Brain className="w-10 h-10 text-tertiary opacity-30" />
           </div>
           <div className="text-center space-y-2">
-            <p className="text-white font-bold text-lg">Chưa có flashcard nào</p>
-            <p className="text-muted-foreground">Tạo flashcard thủ công hoặc sinh tự động từ tài liệu.</p>
+            <p className="text-primary font-bold text-lg">Chưa có flashcard nào</p>
+            <p className="text-secondary">Tạo flashcard thủ công hoặc sinh tự động từ tài liệu.</p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" onClick={() => setShowCreateDialog(true)}>

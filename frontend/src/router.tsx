@@ -8,9 +8,16 @@ import GlobalGraphExplorer from './pages/GlobalGraphExplorer';
 import Flashcards from './pages/Flashcards';
 import Quiz from './pages/Quiz';
 import Zettelkasten from './pages/Zettelkasten';
+import TeamSettings from './pages/TeamSettings';
+import LanguageChat from './pages/LanguageChat';
+import MathChat from './pages/MathChat';
+import { OfflinePage } from './pages/OfflinePage';
 import DocumentGuard from './components/shared/DocumentGuard';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { FallbackError } from './components/shared/FallbackError';
+import { ThemeProvider } from './providers/ThemeProvider';
+import { InstallPrompt } from './components/shared/InstallPrompt';
+import './styles/tokens.css';
 
 // Error page component for route-level errors
 const ErrorPage = ({ error }: { error?: any }) => (
@@ -80,10 +87,35 @@ const router = createBrowserRouter([
         element: <Zettelkasten />,
         errorElement: <ErrorPage />,
       },
+      {
+        path: 'team/:teamId',
+        element: <TeamSettings />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'offline',
+        element: <OfflinePage />,
+      },
+      {
+        path: 'language-chat',
+        element: <LanguageChat />,
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'math-chat',
+        element: <MathChat />,
+        errorElement: <ErrorPage />,
+      },
     ],
   },
 ]);
 
 export function Router() {
-  return <RouterProvider router={router} />;
+  return (
+    <ThemeProvider>
+      <OfflinePage />
+      <InstallPrompt />
+      <RouterProvider router={router} />
+    </ThemeProvider>
+  );
 }

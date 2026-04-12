@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useState, useRef } from 'react';
 import {
   Upload,
@@ -133,7 +134,7 @@ export default function UploadModal({ open, setOpen }: UploadModalProps) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-white tracking-tight">Tải lên tri thức</DialogTitle>
+          <DialogTitle className="text-2xl font-bold text-primary tracking-tight">Tải lên tri thức</DialogTitle>
           <DialogDescription>
             Chúng tôi sẽ xây dựng đồ thị tri thức từ tài liệu PDF của bạn.
           </DialogDescription>
@@ -142,7 +143,7 @@ export default function UploadModal({ open, setOpen }: UploadModalProps) {
         <div 
           className={cn(
             "mt-4 border-2 border-dashed rounded-3xl p-10 transition-all flex flex-col items-center justify-center gap-4 text-center cursor-pointer group",
-            file ? "border-primary/50 bg-primary/5" : "border-white/10 hover:border-primary/30 hover:bg-white/5"
+            file ? "border-primary/50 bg-primary/5" : "border-border-primary hover:border-primary/30 hover:bg-secondary"
           )}
           onClick={() => !file && fileInputRef.current?.click()}
         >
@@ -166,18 +167,18 @@ export default function UploadModal({ open, setOpen }: UploadModalProps) {
                  </button>
               </div>
               <div className="flex flex-col gap-1 w-full overflow-hidden">
-                <span className="font-bold text-white truncate px-4">{file.name}</span>
-                <span className="text-xs text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                <span className="font-bold text-primary truncate px-4">{file.name}</span>
+                <span className="text-xs text-secondary">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
               </div>
             </div>
           ) : (
             <>
-              <div className="w-16 h-16 rounded-3xl bg-white/5 flex items-center justify-center group-hover:bg-primary/20 transition-all duration-500 group-hover:scale-110">
-                <Upload className="w-8 h-8 text-muted-foreground group-hover:text-primary transition-colors" />
+              <div className="w-16 h-16 rounded-3xl bg-secondary flex items-center justify-center group-hover:bg-primary/20 transition-all duration-500 group-hover:scale-110">
+                <Upload className="w-8 h-8 text-secondary group-hover:text-primary transition-colors" />
               </div>
               <div className="space-y-1">
-                <p className="font-bold text-white group-hover:text-primary transition-colors">Nhấp để chọn tệp PDF</p>
-                <p className="text-xs text-muted-foreground">Giới hạn tệp tối đa 50MB</p>
+                <p className="font-bold text-primary group-hover:text-primary transition-colors">Nhấp để chọn tệp PDF</p>
+                <p className="text-xs text-secondary">Giới hạn tệp tối đa 50MB</p>
               </div>
             </>
           )}

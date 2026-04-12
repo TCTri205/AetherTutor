@@ -289,3 +289,148 @@ class LightRAGPipeline(LightRAG):
     async def generate_response(self, query: str, context: List[Dict[str, Any]]) -> str:
         # To be implemented in Retriever or LLMService
         return await self.retriever.generate(query, context)
+
+    async def ingest_code_entities(
+        self, 
+        doc_id: uuid.UUID, 
+        entities: list, 
+        relations: list,
+        code_snippet: str = "",
+        user_id: Optional[uuid.UUID] = None
+    ) -> str:
+        """
+        Xử lý entities/relations đã được extract từ code parser.
+        
+        Args:
+            doc_id: Document UUID
+            entities: List of ExtractedEntity từ code parser
+            relations: List of EntityRelation từ code parser
+            code_snippet: Source code snippet để lưu vào metadata
+            user_id: User UUID for multi-tenant isolation
+            
+        Returns:
+            Document ID string
+        """
+        effective_user_id = user_id or self.user_id
+        
+        try:
+            await self.doc_repo.update_status(doc_id, DocumentStatus.PROCESSING)
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING_ENTITIES)
+            
+            logger.info(f"Processing code entities: {len(entities)} entities, {len(relations)} relations")
+            
+            # Deduplicate
+            dedup_entities = self.extractor.deduplicate_entities(entities)
+            dedup_relations = self._deduplicate_relations(relations)
+            
+            # Chuẩn bị data để lưu vào PostgreSQL
+            entity_data_list = [
+                {
+                    "canonical_name": e.name,
+                    "entity_type": e.entity_type,
+                    "description": e.description,
+                    "confidence": e.confidence,
+                    "metadata_": {
+                        "source": "code_parser",
+                        "code_snippet": code_snippet[:2000] if code_snippet else "",  # Giới hạn 2000 chars
+                    }
+                }
+                for e in dedup_entities
+            ]
+            
+            # Lưu entities
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.BUILDING_GRAPH)
+            upserted_entities = await self.graph_repo.bulk_upsert_entities(
+                entity_data_list, 
+                doc_id, 
+                effective_user_id
+            )
+            
+            # Build mapping
+            entity_id_map = {e.canonical_name: e.id for e in upserted_entities}
+            
+            # Chuẩn bị relations với UUID FK
+            relation_data_list = [
+                {
+                    "source_entity_id": entity_id_map.get(r.source),
+                    "target_entity_id": entity_id_map.get(r.target),
+                    "relation_type": r.relation_type,
+                    "description": r.description,
+                    "metadata_": {"source": "code_parser"}
+                }
+                for r in dedup_relations
+                if r.source in entity_id_map and r.target in entity_id_map
+            ]
+            
+            await self.graph_repo.bulk_upsert_relations(relation_data_list, doc_id)
+            
+            # Lưu vào ChromaDB
+            await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EMBEDDING)
+            entity_chroma_ids = [f"{doc_id}::entity::{e.name}" for e in dedup_entities]
+            entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
+            
+            if entity_chroma_ids:
+                entity_embeddings = await embedding_service.generate_embeddings(entity_chroma_docs)
+                
+                def _is_valid_embedding(emb) -> bool:
+                    return emb is not None and any(v != 0.0 for v in emb)
+                
+                has_valid_embeddings = all(_is_valid_embedding(emb) for emb in entity_embeddings) if entity_embeddings else False
+                
+                chroma_client.add_entities(
+                    ids=entity_chroma_ids,
+                    documents=entity_chroma_docs,
+                    metadatas=[{"document_id": str(doc_id), "entity_name": e.name} for e in dedup_entities],
+                    embeddings=entity_embeddings if has_valid_embeddings else None,
+                )
+            
+            # Persist graph
+            try:
+                builder_entities = [
+                    {
+                        "canonical_name": e.name,
+                        "entity_type": e.entity_type,
+                        "description": e.description,
+                        "confidence": e.confidence
+                    }
+                    for e in dedup_entities
+                ]
+                builder_relations = [
+                    {
+                        "source_entity": r.source,
+                        "target_entity": r.target,
+                        "relation_type": r.relation_type,
+                        "description": r.description
+                    }
+                    for r in dedup_relations
+                ]
+                
+                await self.graph_builder.add_entities_and_relations(
+                    builder_entities,
+                    builder_relations,
+                    document_id=str(doc_id)
+                )
+                await self.graph_builder.persist_graph(str(doc_id))
+            except Exception as e:
+                logger.error(f"GraphBuilder integration error: {e}")
+            
+            # Hoàn tất
+            await self.doc_repo.update_status(doc_id, DocumentStatus.COMPLETED)
+            logger.info(f"Code processing completed for {doc_id}: {len(dedup_entities)} entities, {len(dedup_relations)} relations")
+            return str(doc_id)
+            
+        except Exception as e:
+            await self.doc_repo.session.rollback()
+            
+            try:
+                await self.doc_repo.update_status(doc_id, DocumentStatus.FAILED, str(e))
+                await self.doc_repo.session.commit()
+            except Exception as update_err:
+                logger.error(f"Không thể cập nhật trạng thái lỗi vào DB: {update_err}")
+            
+            try:
+                chroma_client.delete_by_document_id(doc_id)
+            except:
+                pass
+            
+            raise e

@@ -1,3 +1,4 @@
+import '../../styles/tokens.css';
 import React from 'react';
 import { AlertTriangle, RefreshCw, Settings, WifiOff, Clock } from 'lucide-react';
 import { Button } from '../ui/Button';

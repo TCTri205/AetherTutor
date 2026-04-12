@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useEffect, useState, useMemo } from 'react';
 import {
   Search,
@@ -81,8 +82,8 @@ export default function Vault() {
     <div className="flex flex-col gap-8 max-w-7xl mx-auto pb-20">
       <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2">
-          <h2 className="text-3xl font-bold text-white tracking-tight">Kho Tri Thức (Vault)</h2>
-          <p className="text-muted-foreground">Quản lý và theo dõi quá trình xử lý tài liệu của bạn.</p>
+          <h2 className="text-3xl font-bold text-primary tracking-tight">Kho Tri Thức (Vault)</h2>
+          <p className="text-secondary">Quản lý và theo dõi quá trình xử lý tài liệu của bạn.</p>
         </div>
         <Button size="lg" className="rounded-2xl gap-2" onClick={() => setIsUploadOpen(true)}>
           <Plus className="w-5 h-5" />
@@ -94,9 +95,9 @@ export default function Vault() {
       <UploadModal open={isUploadOpen} setOpen={setIsUploadOpen} />
 
       {/* Filters & Actions */}
-      <div className="flex flex-col md:flex-row gap-4 bg-white/5 p-4 rounded-2xl border border-white/5 glass">
+      <div className="flex flex-col md:flex-row gap-4 bg-secondary p-4 rounded-2xl border border-border-primary glass">
         <div className="relative flex-1 group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary group-focus-within:text-primary transition-colors" />
           <input
             type="text"
             placeholder="Tìm kiếm tài liệu..."
@@ -150,16 +151,16 @@ export default function Vault() {
           ))
         ) : filteredDocs.length > 0 ? (
           filteredDocs.map((doc) => (
-            <Card key={doc.id} className="hover:border-primary/20 transition-all group overflow-hidden border-white/5">
+            <Card key={doc.id} className="hover:border-primary/20 transition-all group overflow-hidden border-border-primary">
               <CardContent className="p-0">
                 <div className="flex flex-col md:flex-row items-center gap-6 p-5">
                    <div className="w-14 h-14 rounded-2xl bg-primary/5 border border-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/10 transition-colors">
-                      <FileIcon className="w-7 h-7 text-primary/70 group-hover:text-primary transition-all" />
+                      <FileIcon className="w-7 h-7 text-secondary group-hover:text-primary transition-all" />
                    </div>
 
                    <div className="flex-1 min-w-0 space-y-1 text-center md:text-left w-full">
-                      <h4 className="font-bold text-white leading-tight truncate">{doc.filename}</h4>
-                      <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-xs text-muted-foreground font-semibold uppercase tracking-wider">
+                      <h4 className="font-bold text-primary leading-tight truncate">{doc.filename}</h4>
+                      <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-xs text-secondary font-semibold uppercase tracking-wider">
                          <span className="flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5" />
                             {formatDistanceToNow(new Date(doc.created_at), { locale: vi })}
@@ -218,7 +219,7 @@ export default function Vault() {
                 </div>
                 {/* Visual Progress bar for processing docs */}
                 {doc.status === 'PROCESSING' && (
-                   <div className="w-full h-1 bg-white/5 overflow-hidden">
+                   <div className="w-full h-1 bg-secondary overflow-hidden">
                       <div className="h-full bg-primary animate-progress-indeterminate rounded-full" />
                    </div>
                 )}
@@ -226,13 +227,13 @@ export default function Vault() {
             </Card>
           ))
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-3xl gap-6">
-             <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-                <Search className="w-10 h-10 text-muted-foreground opacity-30" />
+          <div className="flex flex-col items-center justify-center py-20 bg-secondary border-2 border-dashed border-border-primary rounded-3xl gap-6">
+             <div className="w-20 h-20 rounded-full bg-tertiary flex items-center justify-center border border-border-primary">
+                <Search className="w-10 h-10 text-tertiary opacity-30" />
              </div>
              <div className="text-center space-y-2">
-                <p className="text-white font-bold text-lg">Không tìm thấy tài liệu phù hợp</p>
-                <p className="text-muted-foreground">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm của bạn.</p>
+                <p className="text-primary font-bold text-lg">Không tìm thấy tài liệu phù hợp</p>
+                <p className="text-secondary">Thử thay đổi bộ lọc hoặc từ khóa tìm kiếm của bạn.</p>
              </div>
              <Button variant="outline" onClick={() => {setSearchTerm(''); setStatusFilter('ALL')}}>Xóa bộ lọc</Button>
           </div>

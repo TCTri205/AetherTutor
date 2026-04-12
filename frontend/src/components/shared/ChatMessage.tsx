@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -22,7 +23,7 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
   return (
     <div className={cn(
       "flex w-full gap-4 py-8 px-4 md:px-0 group transition-colors",
-      isUser ? "bg-transparent" : "bg-white/[0.02]"
+      isUser ? "bg-transparent" : "bg-secondary"
     )}>
       <div className="max-w-4xl mx-auto flex w-full gap-4 md:gap-6">
         {/* Avatar */}
@@ -38,7 +39,7 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
         {/* Content Area */}
         <div className="flex-1 space-y-4 overflow-hidden">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm tracking-tight text-white/90">
+            <span className="font-bold text-sm tracking-tight text-primary">
               {isUser ? 'Bạn' : 'Aether Tutor'}
             </span>
             {!isUser && (
@@ -80,8 +81,8 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
 
           {/* Message Content (Markdown) */}
           <div className={cn(
-            "prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-black/50 prose-pre:border prose-pre:border-white/10 prose-pre:rounded-2xl prose-code:text-primary prose-headings:text-white/90",
-            isUser ? "text-white/80" : "text-white/95"
+            "prose prose-invert max-w-none prose-p:leading-relaxed prose-pre:bg-secondary prose-pre:border prose-pre:border-border-primary prose-pre:rounded-2xl prose-code:text-primary prose-headings:text-primary",
+            isUser ? "text-secondary" : "text-primary"
           )}>
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}
@@ -99,7 +100,7 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
                   }
 
                   return (
-                    <code className={cn(className, inline ? "bg-white/5 px-1.5 py-0.5 rounded text-primary" : "")} {...props}>
+                    <code className={cn(className, inline ? "bg-secondary px-1.5 py-0.5 rounded text-primary" : "")} {...props}>
                       {children}
                     </code>
                   )

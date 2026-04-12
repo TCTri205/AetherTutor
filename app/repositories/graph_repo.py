@@ -212,6 +212,31 @@ class GraphRepository(BaseRepository[GraphEntity]):
             for e in entities
         ]
 
+    async def get_entity_types_by_names(
+        self,
+        user_id: uuid.UUID,
+        canonical_names: List[str],
+    ) -> Dict[str, str]:
+        """
+        Get entity_type for a list of canonical names, scoped to a user.
+        Returns dict mapping canonical_name -> entity_type.
+        """
+        if not canonical_names:
+            return {}
+
+        stmt = (
+            select(GraphEntity.canonical_name, GraphEntity.entity_type)
+            .where(
+                GraphEntity.canonical_name.in_(canonical_names),
+                GraphEntity.user_id == user_id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        # If multiple entities share the same name, take the first one
+        return {row.canonical_name: row.entity_type for row in rows}
+
     async def delete_by_document_id(self, document_id: uuid.UUID):
         await self.session.execute(
             delete(GraphEntity).where(GraphEntity.document_id == document_id)

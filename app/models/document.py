@@ -48,6 +48,9 @@ class Document(Base, TimestampMixin):
     topics = relationship(
         "Topic", secondary="document_topics", back_populates="documents"
     )
+    entity_links = relationship(
+        "EntityDocument", back_populates="document", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename={self.filename}, status={self.status})>"

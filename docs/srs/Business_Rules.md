@@ -66,58 +66,85 @@ async def test_user_isolation():
 
 ## BR-002: Document Processing Pipeline 🔴
 
-**8 trạng thái BẮT BUỘC (khớp Data_Model State Machine):**
+**Dual-Field State Machine (khớp với Code — 2 fields: `status` + `processing_step`):**
+
 ```
-pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → vector_storage → completed
-  (1)         (2)         (3)            (4)                 (5)                    (6)                  (7)             (8)
+Field 1: status (4 states — macro trạng thái)
+    PENDING → PROCESSING → COMPLETED / FAILED
+
+Field 2: processing_step (8 steps — chi tiết bước đang chạy)
+    QUEUED → INITIAL → EXTRACTING → CHUNKING → EXTRACTING_ENTITIES → BUILDING_GRAPH → EMBEDDING → COMPLETED
+
+Kết hợp thực tế:
+    status = "PENDING",     processing_step = "QUEUED" | "INITIAL"
+    status = "PROCESSING",  processing_step = EXTRACTING | CHUNKING | EXTRACTING_ENTITIES | BUILDING_GRAPH | EMBEDDING
+    status = "COMPLETED",   processing_step = "COMPLETED"
+    status = "FAILED",      processing_step = step bị lỗi (để debug)
 ```
 
 **Chi tiết từng bước:**
 
-| Bước | State | Tên | Input | Output | Điều kiện thành công |
-|---|---|---|---|---|---|
-| 1 | `pending` | Initial State | File upload | Document record (status: pending) | File hợp lệ, size < 50MB |
-| 2 | `processing` | Start Processing | Document pending | Worker picks up task | Worker available |
-| 3 | `chunking` | Extract & Chunk | Raw text | Chunks (500 chars, 50 overlap) | Ít nhất 100 chars extracted |
-| 4 | `entity_extraction` | Entity Extraction | Chunks | Entities + Relations | Có ít nhất 1 entity |
-| 5 | `graph_construction` | Graph Building | Entities + Relations | NetworkX graph | Graph có nodes và edges |
-| 6 | `embedding_generation` | Embedding Gen | Chunks | Vector embeddings | Chunks được embed |
-| 7 | `vector_storage` | Store Vector | Embeddings | Saved to ChromaDB | ChromaDB success |
-| 8 | `completed` | Final State | All storage success | Document ready | Cả 3 storage layers thành công |
+| Step | processing_step | status | Tên | Input | Output | Điều kiện thành công |
+|---|---|---|---|---|---|---|
+| 1 | `QUEUED` | `PENDING` | Queued | File upload | Document record created | File hợp lệ, size < 50MB |
+| 2 | `INITIAL` | `PROCESSING` | Worker starts | Document pending | Text extraction begins | Worker available |
+| 3 | `EXTRACTING` | `PROCESSING` | Text Extraction | Raw file | Raw text | Ít nhất 100 chars extracted |
+| 4 | `CHUNKING` | `PROCESSING` | Chunking | Raw text | Chunks (500 chars, 50 overlap) | Có ít nhất 1 chunk |
+| 5 | `EXTRACTING_ENTITIES` | `PROCESSING` | Entity Extraction | Chunks | Entities + Relations | Có ít nhất 1 entity |
+| 6 | `BUILDING_GRAPH` | `PROCESSING` | Graph Building | Entities + Relations | NetworkX graph | Graph có nodes và edges |
+| 7 | `EMBEDDING` | `PROCESSING` | Embedding Gen | **Chunks + Entities** | **Vector embeddings cho chunks VÀ entities** | **Tất cả chunks và entities được embed** |
+| 8 | `COMPLETED` | `COMPLETED` | Final State | All storage success | Document ready | Cả 3 storage layers thành công |
 
-**State Machine (khớp Data_Model.md Section 4):**
+**⚠️ CRITICAL — Embedding Generation Rule (LightRAG Dual-Level Retrieval):**
 ```
-pending → processing → chunking → entity_extraction → graph_construction → embedding_generation → vector_storage → completed
-                ↓            ↓              ↓                    ↓                       ↓                   ↓
-              failed       failed         failed               failed                 failed              failed
+Step 7 (EMBEDDING) PHẢI sinh embeddings cho CẢ:
+    1. Document chunks (cho retrieval ngữ cảnh)
+    2. Graph entities (cho semantic entity lookup)
 
-partial_failure → retry (max 3) → embedding_generation
-                                → failed (retry exhausted)
+ChromaDB metadata cho mỗi embedding:
+    - "user_id": "uuid"
+    - "document_id": "uuid"
+    - "content_type": "chunk" | "entity"  ← PHÂN BIỆT loại embedding
+    - "chunk_id": "uuid"                  ← Có nếu content_type = "chunk"
+    - "entity_id": "uuid"                 ← Có nếu content_type = "entity"
+    - "embedding_model": "text-embedding-3-small"
+    - "embedding_dim": 1536
+
+⚠️ KHÔNG được chỉ embed chunks. Nếu thiếu entity embeddings,
+   LightRAG dual-level retrieval (entity similarity + concept traversal)
+   sẽ KHÔNG hoạt động đúng — fallback về keyword matching (kém chính xác).
 ```
 
-**Logic:**
+**Error Handling:**
 ```
-IF bất kỳ bước nào FAIL
-THEN:
-    - Update document status = "failed"
-    - Lưu error_message vào document record
-    - Retry tối đa 3 lần với exponential backoff (30s, 60s, 120s)
-    - Sau 3 lần vẫn fail → Notify user
+IF bất kỳ step nào FAIL:
+    - status = "FAILED"
+    - processing_step = step_id bị lỗi (ví dụ: "EMBEDDING")
+    - error_message = chi tiết lỗi
+    - retry_count += 1
+
+IF retry_count < max_retries (BR-010):
+    - Rollback partial data (BR-016)
+    - status = "PENDING", processing_step = "QUEUED"
+    - Queue lại task
+ELSE:
+    - Document permanently failed
+    - User phải retry thủ công
 ```
 
-**State Transition Rules (khớp Data_Model):**
+**State Transition Rules:**
 
-| From State | To State | Trigger | Conditions |
+| From (status, step) | To (status, step) | Trigger | Conditions |
 |---|---|---|---|
-| `pending` | `processing` | Background worker picks up | File size < max, valid format |
-| `processing` | `chunking` | Text extraction success | Min 100 chars extracted |
-| `chunking` | `entity_extraction` | Chunking complete | At least 1 chunk created |
-| `entity_extraction` | `graph_construction` | Entities extracted | Min 1 entity (spaCy or LLM) |
-| `graph_construction` | `embedding_generation` | Graph saved | NetworkX graph has nodes |
-| `embedding_generation` | `vector_storage` | Embeddings generated | All chunks embedded |
-| `vector_storage` | `completed` | Storage success | PostgreSQL + ChromaDB + Graph synced |
-| Any state | `failed` | Error with no retry | Timeout, invalid data, API error |
-| `partial_failure` | `retry` | Some embeddings/storage failed | Retry count < 3 |
+| `(PENDING, QUEUED)` | `(PROCESSING, INITIAL)` | Worker picks up task | File valid, no concurrent processing |
+| `(PROCESSING, INITIAL)` | `(PROCESSING, EXTRACTING)` | Worker starts | Worker ready |
+| `(PROCESSING, EXTRACTING)` | `(PROCESSING, CHUNKING)` | Text extraction success | Min 100 chars extracted |
+| `(PROCESSING, CHUNKING)` | `(PROCESSING, EXTRACTING_ENTITIES)` | Chunking complete | At least 1 chunk created |
+| `(PROCESSING, EXTRACTING_ENTITIES)` | `(PROCESSING, BUILDING_GRAPH)` | Entities extracted | Min 1 entity |
+| `(PROCESSING, BUILDING_GRAPH)` | `(PROCESSING, EMBEDDING)` | Graph saved | NetworkX graph has nodes |
+| `(PROCESSING, EMBEDDING)` | `(COMPLETED, COMPLETED)` | Embeddings stored | PostgreSQL + ChromaDB synced |
+| Any `(PROCESSING, step)` | `(FAILED, step)` | Error | Timeout, API error, invalid data |
+| `(FAILED, step)` | `(PENDING, QUEUED)` | Retry (BR-010 + BR-016) | rollback success + retry_count < max |
 
 **Violation Impact:** 🔴 **Data corruption** — Graph không đầy đủ, RAG query sai
 
@@ -272,15 +299,19 @@ Bạn là Socratic Tutor. NHIỆM VỤ CỦA BẠN:
 4. Chỉ giải thích khi user đã thử >= 2 lần
 5. Phát hiện "ảo tưởng hiểu biết" và đặt câu hỏi probing
 
-FORMAT PHẢN HỒI:
-- Câu hỏi gợi mở (bắt buộc)
-- Gợi ý nhỏ (nếu user đã thử 1 lần)
-- Giải thích Feynman (nếu user đã thử >= 2 lần)
-- Follow-up question (luôn có)
+FORMAT PHẢN HỒI JSON (BẮT BUỘC — Structured Output):
+{
+  "current_concept": "Tên khái niệm đang thảo luận",
+  "response_type": "question" | "hint" | "explanation",
+  "content": "Nội dung phản hồi chính",
+  "follow_up_question": "Câu hỏi tiếp theo (luôn có)"
+}
 
-**Tracking Rule:**
-- `attempt_count` được lưu trong chat session metadata.
-- `attempt_count` reset về 0 mỗi khi người dùng chuyển sang khái niệm (concept) mới hoặc bắt đầu một task học tập mới.
+**Tracking Rule (Backend-managed — LLM KHÔNG tự update):**
+- `attempt_count` được lưu trong chat session metadata (PostgreSQL).
+- `attempt_count` reset về 0 khi `current_concept` thay đổi (so sánh JSON response field).
+- Backend tự extract `current_concept` từ LLM JSON response → so sánh với concept cũ → quyết định reset hay increment.
+- ⚠️ LLM KHÔNG trực tiếp update database. Backend hoàn toàn quản lý attempt logic.
 ```
 
 **Violation Impact:** 🔴 **Mất phương pháp Socratic** — AI trở thành chatbot thường
@@ -333,6 +364,36 @@ THEN:
     - Hiển thị badge "🔒 Local Mode" trên UI
 ```
 
+**⚠️ CRITICAL — Embedding Dimension Mismatch Prevention:**
+```
+Khi user switch Embedding Provider (openai ↔ ollama):
+    1. Kiểm tra embedding_dim của model mới vs model cũ
+       - OpenAI text-embedding-3-small: 1536 dimensions
+       - Ollama llama3/nomic-embed: thường 4096 hoặc 768 dimensions
+
+    2. NẾU dimension khác nhau:
+        a. TẠO ChromaDB collection mới: "{provider}_{model}_{dim}"
+        b. KHÔNG xóa collection cũ — giữ để query cross-collection
+        c. CẢNH BÁO user: 
+           "Chế độ mới dùng embedding khác. Tài liệu cũ và mới 
+            sẽ ở không gian vector riêng. Tìm kiếm vẫn hoạt động 
+            trên cả hai nhưng kết quả có thể khác nhau."
+
+    3. Metadata embedding tracking (BẮT BUỘC):
+       - Mỗi embedding trong ChromaDB PHẢI có:
+         + "embedding_model": "text-embedding-3-small" | "nomic-embed-text"
+         + "embedding_dim": 1536 | 4096 | 768
+         + "created_at": ISO timestamp
+
+    4. Khi query graph:
+       - Query TẤT CẢ collections có cùng embedding_dim với current model
+       - Merge results từ các collections
+       - Collections khác dimension → SKIP (tránh crash)
+
+⚠️ KHÔNG BAO GIỜ chèn vector khác dimension vào cùng collection.
+   Sẽ gây ValueError: "dimension mismatch" và crash hệ thống.
+```
+
 **Configuration:**
 | Setting | Local Mode | Cloud Mode |
 |---|---|---|
@@ -340,8 +401,11 @@ THEN:
 | `OPENAI_API_KEY` | NOT USED | Required |
 | `DEFAULT_LLM_MODEL` | `llama3`, `mistral`, etc. | `gpt-4`, `claude-3.5`, etc. |
 | `EMBEDDING_PROVIDER` | `ollama` | `openai` |
+| `EMBEDDING_MODEL` | `nomic-embed-text` (768d) | `text-embedding-3-small` (1536d) |
+| `EMBEDDING_DIM` | `768` | `1536` |
 
 **Violation Impact:** 🔴 **Data privacy breach** — Dữ liệu gửi lên cloud khi user không muốn
+**Violation Impact (Dimension):** 🔴 **System crash** — ChromaDB dimension mismatch
 
 ---
 
@@ -408,13 +472,28 @@ THEN:
 **Mô tả:** Document upload PHẢI validate trước khi xử lý.
 
 **Validation Rules:**
-| Rule | Condition | Error Message |
-|---|---|---|
-| File size | <= 50MB | "File vượt giới hạn 50MB. Vui lòng nén file." |
-| File type | PDF, URL, YouTube | "Chỉ hỗ trợ PDF, URL, hoặc YouTube links." |
-| PDF text layer | Must have text layer | "Không đọc được text. Cần PDF có text layer." |
-| URL accessible | HTTP 200 response | "Không truy cập được URL này." |
-| User quota | Daily limit not exceeded | "Vượt giới hạn upload trong ngày. Nâng cấp để thêm." |
+| Rule | Condition | Error HTTP Code | Error Message |
+|---|---|---|---|
+| File size | <= 50MB | 400 | "File vượt giới hạn 50MB. Vui lòng nén file." |
+| File type | PDF, URL, YouTube | 400 | "Chỉ hỗ trợ PDF, URL, hoặc YouTube links." |
+| PDF text layer | Must have text layer | 400 | "Không đọc được text. Cần PDF có text layer." |
+| URL accessible | HTTP 200 response | 400 | "Không truy cập được URL này." |
+| User quota | Daily limit not exceeded | 429 | "Vượt giới hạn upload trong ngày. Nâng cấp để thêm." |
+| **Concurrent processing** | **User KHÔNG có document nào đang `pending`, `processing`, `chunking`, `entity_extraction`, `graph_construction`, `embedding_generation`, `vector_storage`** | **409** | **"Document khác đang xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."** |
+
+**Concurrent Processing Rule (CRITICAL — Queue Overload Prevention):**
+```
+TRƯỚC KHI chấp nhận upload mới:
+    existing = SELECT COUNT(*) FROM documents 
+               WHERE user_id = :user_id 
+               AND status IN ('pending', 'processing', 'chunking', 
+                              'entity_extraction', 'graph_construction', 
+                              'embedding_generation', 'vector_storage')
+    
+    IF existing > 0:
+        RETURN 409 CONCURRENT_PROCESSING
+        ← CHẶN upload, KHÔNG queue task mới
+```
 
 **Violation Impact:** 🟡 **Wasted processing** hoặc **storage waste**
 
@@ -549,6 +628,28 @@ THEN:
     - KHÔNG hiển thị document cho user như "completed"
     - Cleanup partial data (embeddings đã lưu, entities đã lưu — xóa theo cascade)
     - User chỉ thấy document hoàn chỉnh khi CẢ 3 storage layers thành công
+```
+
+**⚠️ CRITICAL — Rollback Before Retry Rule (CHỐNG DUPLICATE DATA):**
+```
+TRƯỚC KHI retry processing cho document bị failed:
+    1. XÓA TOÀN BỘ partial data của document từ TẤT CẢ storage layers:
+       - DELETE FROM document_chunks WHERE document_id = :doc_id
+       - DELETE FROM graph_entities WHERE document_id = :doc_id
+       - DELETE FROM graph_relations WHERE document_id = :doc_id
+       - ChromaDB: delete(where={"document_id": doc_id})
+       - NetworkX: remove document nodes từ in-memory graph
+
+    2. Reset document status:
+       - status = "pending"
+       - processing_step = "INITIAL"
+       - error_message = NULL
+       - retry_count = 0
+
+    3. Queue task mới → Worker chạy pipeline từ Step 1 trên data SẠCH
+
+⚠️ KHÔNG được retry mà không rollback trước.
+   Sẽ sinh ra DUPLICATE chunks, entities, relations → data phình to, graph corrupt.
 ```
 
 **Violation Impact:** 🔴 **User experience destroyed** — Treo, crash, data corrupt

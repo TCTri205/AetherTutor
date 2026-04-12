@@ -38,6 +38,10 @@ Mỗi User Flow được đánh ID: **`UF-XXX`** (User Flow #XXX).
 |---|---|---|---|
 | 1 | User click "Upload PDF" | Mở upload modal | — |
 | 2 | User chọn file PDF | Validate: size, type | File → Frontend |
+| **2a** | **Kiểm tra concurrent processing (BR-011)** | **SELECT COUNT(*) FROM documents WHERE user_id = :user_id AND status IN ('PENDING', 'PROCESSING')** | **PostgreSQL** |
+| **2b** | **⚠️ NẾU có document đang xử lý** | **Trả về 409 CONCURRENT_PROCESSING: "Document khác đang được xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."** | **Error → Frontend** |
+| **2c** | **Kiểm tra idempotency — file hash (BR-017)** | **SHA-256 hash → SELECT id FROM documents WHERE content_hash = :hash AND user_id = :user_id** | **PostgreSQL** |
+| **2d** | **⚠️ NẾU file đã tồn tại** | **Trả về 409 DUPLICATE_DOCUMENT: "File này đã được upload trước đó (doc_id: xxx)"** | **Error → Frontend** |
 | 3 | Validation passed | Hiển thị progress bar | `POST /api/v1/documents/process` |
 | 4 | Frontend upload file | Backend tạo document record (status: `pending`) | File → PostgreSQL |
 | 5 | Backend trả về `202 Accepted` + `doc_id` | Frontend hiển thị "Processing..." | `doc_id` → Frontend |
@@ -270,8 +274,10 @@ sequenceDiagram
 | 2 | Frontend hiển thị flashcard đầu tiên | Front (question) visible, Back hidden | — |
 | 3 | User click "Show Answer" | Back (answer) hiển thị | — |
 | 4 | User tự đánh giá (0-5) | Gửi quality rating | `POST /api/v1/flashcards/{id}/review` |
-| 5 | Backend cập nhật SM-2 params | Áp dụng SM-2 algorithm (BR-005) | Update flashcard record |
-| 6 | Hiển thị flashcard tiếp theo | Repeat từ Step 2 | — |
+| 5 | Backend tính SM-2 params mới | Áp dụng công thức BR-005 | Flashcard → SM-2 Algorithm |
+| 6 | Cập nhật flashcard | Lưu ease_factor, interval, repetitions, next_review, **sm2_last_review** | PostgreSQL |
+| **6a** | **Ghi nhận study session** | **`INSERT INTO study_sessions (user_id, flashcard_id, quality, response_time_ms)`** | **PostgreSQL** |
+| 7 | Hiển thị flashcard tiếp theo | Repeat từ Step 2 | — |
 | 7 | Hết flashcard due | Hiển thị summary: reviewed, avg quality | — |
 
 ### Alternative Flows
@@ -433,6 +439,7 @@ sequenceDiagram
 | 4 | Backend quét content tìm keywords | So khớp với entities trong graph | Content → Graph search |
 | 5 | Tìm thấy entities trùng | Gợi ý backlinks tới notes đã có | Entities → Notes lookup |
 | 6 | Lưu note với backlinks | `INSERT note + note_links` | PostgreSQL |
+| **6a** | **Sinh embedding cho note content** | **Embed note content → lưu ChromaDB** | **Note content → Embedding → ChromaDB** |
 | 7 | Trả về note đã lưu | Frontend hiển thị với backlink suggestions | Note + backlinks → FE |
 
 ### Alternative Flows
@@ -558,7 +565,9 @@ sequenceDiagram
 | 1 | User mở Settings → Model Settings | — | — |
 | 2 | User toggle Local/Cloud Mode | — | — |
 | 3 | Nếu Local Mode: Kiểm tra Ollama health | `GET http://localhost:11434/api/tags` | — |
-| 4a | Ollama online | Cập nhật config, hiển thị "🔒 Local Mode" | `DEFAULT_LLM_MODEL = llama3` |
+| 3a | **Kiểm tra embedding dimension** | **So sánh dim model mới vs model cũ** | **Config DB** |
+| **3b** | **⚠️ NẾU dimension khác nhau** | **CẢNH BÁO user: "Chế độ mới dùng embedding khác kích thước. Tài liệu cũ và mới sẽ ở không gian vector riêng. Bạn có muốn tiếp tục?"** | **Confirmation modal** |
+| 4a | Ollama online + user xác nhận | Cập nhật config, tạo collection mới nếu cần, hiển thị "🔒 Local Mode" | `DEFAULT_LLM_MODEL = llama3` |
 | 4b | Ollama offline | Cảnh báo: "Ollama không phản hồi. Kiểm tra lại." | Error message → FE |
 | 5 | Lưu setting | Cập nhật `.env` hoặc DB config | — |
 | 6 | Badge trên UI thay đổi | "🌐 Cloud" → "🔒 Local" | — |
@@ -677,7 +686,7 @@ sequenceDiagram
 | **UF-006** | Knowledge Graph Visualization | Graph, NetworkX | BR-001 | 🟢 Thấp |
 | **UF-007** | Switch Local/Cloud Mode | Settings, LLM | BR-008 | 🟢 Thấp |
 | **UF-008** | Dashboard — Morning Routine | Dashboard | BR-001 | 🟢 Thấp |
-| **UF-009** | Obsidian Graph Integration | Graph, Worker | BR-008, BR-009 | 🟡 Trung bình |
+| **UF-009** | Obsidian Graph Integration | Graph, Worker | BR-002, BR-003, BR-004 | 🟡 Trung bình |
 | **UF-010** | Delete Document (Cascade Cleanup) | Document, Graph, Flashcard, Quiz, Note | BR-001, BR-016, BR-017 | 🔴 Cao |
 | **UF-011** | Edit/Update Note (Recalculate Backlinks) | Note, Graph | BR-009, BR-001 | 🟡 Trung bình |
 | **UF-012** | Merge Entities | Graph, LLM | BR-001, BR-017 | 🟡 Trung bình |
@@ -700,15 +709,35 @@ sequenceDiagram
 | 1 | User click "Delete" trên document | Mở confirmation modal | — |
 | 2 | User xác nhận "Delete" | Frontend gửi request | `DELETE /api/v1/documents/{doc_id}` |
 | 3 | Backend nhận request | Validate: document tồn tại, thuộc user | — |
-| 4 | Xóa flashcards liên quan | `DELETE FROM flashcards WHERE source_doc = doc_id` | PostgreSQL |
-| 5 | Xóa quizzes liên quan | `DELETE FROM quizzes WHERE document_id = doc_id` | PostgreSQL |
-| 6 | Xóa notes liên quan | `DELETE FROM note_links WHERE source_doc = doc_id`<br/>`DELETE FROM notes WHERE source_doc = doc_id` (nếu có) | PostgreSQL |
-| 7 | Xóa embeddings | ChromaDB: `delete(where={"document_id": doc_id})` | ChromaDB |
-| 8 | Xóa graph entities/edges | `DELETE FROM graph_entities WHERE document_id = doc_id`<br/>`DELETE FROM graph_relations WHERE document_id = doc_id` | PostgreSQL |
-| 9 | Rebuild NetworkX graph | Load lại graph từ SQL (nguồn sự thật) | NetworkX |
-| 10 | Xóa document record | `DELETE FROM documents WHERE id = doc_id` | PostgreSQL |
-| 11 | Xóa document chunks | `DELETE FROM document_chunks WHERE document_id = doc_id` | PostgreSQL |
-| 12 | Trả về kết quả | Frontend đóng modal, refresh danh sách | Response: `{deleted_entities, deleted_relations, deleted_embeddings}` |
+| **4** | **Bắt đầu transaction PostgreSQL** | **BEGIN TRANSACTION** | **PostgreSQL** |
+| **5** | **Xóa embeddings (ChromaDB — KHÔNG có CASCADE)** | **ChromaDB: `delete(where={"document_id": doc_id})`** | **ChromaDB** |
+| **6** | **Xóa entity-document links (junction table)** | **`DELETE FROM entity_documents WHERE document_id = doc_id`** | **PostgreSQL** |
+| **7** | **Xóa document record (CASCADE tự động cleanup)** | **`DELETE FROM documents WHERE id = doc_id`**<br/>→ CASCADE xóa: `document_chunks`, `graph_entities` (of this doc), `graph_relations` (of this doc), `flashcards`, `quizzes`, `notes` | **PostgreSQL CASCADE** |
+| **8** | **Commit transaction** | **COMMIT** | **PostgreSQL** |
+| **9** | **Cleanup orphan entities** | **Xóa entities không còn `document_links` nào**<br/>`DELETE FROM graph_entities WHERE id NOT IN (SELECT entity_id FROM entity_documents)` | **PostgreSQL** |
+| 10 | Rebuild NetworkX graph | Load lại graph từ SQL (nguồn sự thật) | NetworkX |
+| 11 | Trả về kết quả | Frontend đóng modal, refresh danh sách | Response: `{deleted_entities, deleted_relations, deleted_embeddings, cascade_counts}` |
+
+**⚠️ CASCADE Clarification:**
+```
+PostgreSQL Foreign Keys với ON DELETE CASCADE:
+    - documents → document_chunks (CASCADE)
+    - documents → graph_entities (SET NULL cho document_id, KHÔNG xóa entity)
+    - documents → flashcards (SET NULL)
+    - documents → quizzes (SET NULL)
+    - documents → notes (SET NULL)
+    - graph_entities → graph_relations (CASCADE)
+    - entity_documents → (junction row, CASCADE)
+
+THỦ CÔNG (KHÔNG có CASCADE):
+    - ChromaDB embeddings → PHẢI xóa thủ công trước khi commit
+    - NetworkX in-memory graph → PHẢI reload sau khi xóa SQL
+
+⚠️ Nếu ChromaDB delete fail:
+    - Rollback transaction PostgreSQL
+    - Trả về 500: "Cannot delete document: embedding cleanup failed"
+    - User retry sau
+```
 
 ### Alternative Flows
 
@@ -867,6 +896,8 @@ sequenceDiagram
 | 4 | Backend validate | Kiểm tra cả 2 entities tồn tại, không cùng ID | — |
 | 5 | Merge relations | Chuyển TẤT CẢ relations của secondary sang primary | Graph → PostgreSQL |
 | 6 | Resolve description conflict | Áp dụng strategy (xem bảng dưới) | — |
+| **6a** | **Update entity_documents** | **Chuyển document associations của secondary sang primary** | **`INSERT INTO entity_documents (entity_id=primary_id, document_id) SELECT secondary_id, document_id FROM entity_documents WHERE entity_id = secondary_id ON CONFLICT DO NOTHING`** |
+| **6b** | **Update note_entity_links** | **Chuyển note links từ secondary sang primary** | **`UPDATE note_entity_links SET entity_id = primary_id WHERE entity_id = secondary_id`** |
 | 7 | Xóa secondary entity | `DELETE FROM graph_entities WHERE id = secondary_id` | PostgreSQL |
 | 8 | Update primary entity | Merge description (nếu cần), cập nhật updated_at | PostgreSQL |
 | 9 | Rebuild NetworkX graph | Load lại graph từ SQL | NetworkX |
@@ -959,10 +990,22 @@ sequenceDiagram
 | 2 | User click vào document | Hiển thị error details | `GET /api/v1/documents/{doc_id}` |
 | 3 | User đọc error message | `error_message` hiển thị rõ ràng + gợi ý | — |
 | 4 | User click "Retry Processing" | Frontend gửi request | `POST /api/v1/documents/{doc_id}/retry` |
-| 5 | Backend reset status | Update status = `pending`, clear error_message | PostgreSQL |
-| 6 | Queue lại task | Gửi vào ARQ queue | Redis → Worker |
-| 7 | Worker xử lý | Repeat pipeline từ step 1 (UF-001) | — |
-| 8 | User thấy status thay đổi | Polling hoặc notification | `GET /api/v1/documents/{doc_id}/status` |
+| **5** | **Backend rollback partial data** | **XÓA toàn bộ partial data của document** | **Xem chi tiết rollback bên dưới** |
+| 6 | Backend reset status | Update status = `pending`, clear error_message | PostgreSQL |
+| 7 | Queue lại task | Gửi vào ARQ queue | Redis → Worker |
+| 8 | Worker xử lý | Repeat pipeline từ step 1 (UF-001) **trên data sạch** | — |
+| 9 | User thấy status thay đổi | Polling hoặc notification | `GET /api/v1/documents/{doc_id}/status` |
+
+**Rollback Steps (Step 5 — BẮT BUỘC):**
+```
+5a. DELETE FROM document_chunks WHERE document_id = :doc_id
+5b. DELETE FROM graph_entities WHERE document_id = :doc_id
+5c. DELETE FROM graph_relations WHERE document_id = :doc_id
+5d. ChromaDB: delete(where={"document_id": doc_id, "content_type": "chunk"})
+5e. ChromaDB: delete(where={"document_id": doc_id, "content_type": "entity"})
+5f. NetworkX: remove nodes associated with doc_id từ in-memory graph
+5g. Log rollback action → graph_edit_log
+```
 
 ### Alternative Flows
 
@@ -1057,6 +1100,7 @@ sequenceDiagram
 | 5 | Worker quét file .md | Trích xuất content, links, tags | Path → MarkdownParser |
 | 6 | Worker resolve thực thể | Kiểm tra trùng lặp và gộp tự động | `resolve_and_merge` |
 | 7 | Worker xây dựng quan hệ | Tạo liên kết từ wiki-links `[[...]]` | Relations → PostgreSQL |
+| **7a** | **Worker sinh embeddings cho Obsidian files** | **Embed từng file content → lưu ChromaDB** | **Obsidian files → Embedding → ChromaDB (content_type: "obsidian")** |
 | 8 | Polling hoàn tất | Thông báo thành công, reload graph | `GET /api/v1/graph/import/obsidian/status/{job_id}` |
 
 ### Alternative Flows

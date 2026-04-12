@@ -1,5 +1,6 @@
 import uuid
 import logging
+from pathlib import Path
 from typing import Any
 from sqlalchemy import select, func
 
@@ -14,6 +15,7 @@ from ..repositories.study_session_repo import StudySessionRepository
 from ..repositories.quiz_repo import QuizResultRepository
 from ..services.chroma_client import chroma_client
 from ..services.pdf_extractor import pdf_extractor
+from ..services.code_parser import code_parser, CodeParserError, CODE_EXTENSIONS
 from ..services.llm_service import llm_service
 from ..services.notification_service import get_notification_service
 from ..config import settings
@@ -126,22 +128,50 @@ async def process_document_task(ctx: Any, doc_id_str: str):
             chroma_client.delete_by_document_id(doc_id)
             await session.commit()
 
-            # Bước 1: Extract PDF
+            # Bước 1: Extract text from file
             if not doc.file_path:
                 raise PermanentProcessingError("Tài liệu không có đường dẫn file vật lý.")
 
             await doc_repo.update_processing_step(doc_id, ProcessingStep.EXTRACTING)
-            logger.info(f"Đang trích xuất văn bản từ PDF: {doc.file_path}")
-            text = pdf_extractor.extract_text(doc.file_path)
-
-            if not text:
-                raise PermanentProcessingError("Không thể trích xuất văn bản có nghĩa từ file PDF.")
-
-            logger.info(f"Extracted {len(text)} characters ({len(text)//1000}KB) from PDF")
+            
+            # Detect file type and route to appropriate parser
+            file_ext = Path(doc.file_path).suffix.lower()
+            
+            if file_ext in CODE_EXTENSIONS:
+                # Code file: use CodeParser
+                logger.info(f"Đang phân tích mã nguồn: {doc.file_path}")
+                try:
+                    extraction_result = code_parser.parse_file(Path(doc.file_path))
+                    text = code_parser.get_code_snippet(Path(doc.file_path))
+                    
+                    # Store code snippet in metadata for graph entities
+                    logger.info(f"Extracted {len(extraction_result.entities)} entities, {len(extraction_result.relations)} relations from code")
+                except CodeParserError as e:
+                    raise PermanentProcessingError(f"Lỗi phân tích mã nguồn: {str(e)}")
+            else:
+                # Document file: use PDF extractor
+                logger.info(f"Đang trích xuất văn bản từ PDF: {doc.file_path}")
+                text = pdf_extractor.extract_text(doc.file_path)
+                
+                if not text:
+                    raise PermanentProcessingError("Không thể trích xuất văn bản có nghĩa từ file PDF.")
+                
+                logger.info(f"Extracted {len(text)} characters ({len(text)//1000}KB) from document")
 
             # Bước 2: Ingest vào Pipeline
             logger.info(f"Đang bắt đầu Ingestion Pipeline cho {doc.filename}")
-            await pipeline.ingest_text(doc_id, text)
+            
+            if file_ext in CODE_EXTENSIONS and 'extraction_result' in locals():
+                # For code files: directly use extracted entities/relations
+                await pipeline.ingest_code_entities(
+                    doc_id, 
+                    extraction_result.entities, 
+                    extraction_result.relations,
+                    code_snippet=text
+                )
+            else:
+                # For documents: use text ingestion
+                await pipeline.ingest_text(doc_id, text)
             
             # Commit session cuối cùng
             await session.commit()

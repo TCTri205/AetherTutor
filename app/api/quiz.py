@@ -250,6 +250,7 @@ async def submit_quiz(
             "is_correct": answer_result["is_correct"],
             "explanation": answer_result.get("explanation", ""),
             "entity_name": question.get("entity_name", ""),
+            "bloom_level": question.get("bloom_level", "remember"),
             "difficulty": question.get("difficulty", 3),
         }
         answer_records.append(answer_record)
@@ -330,7 +331,7 @@ async def get_quiz_result(
             is_correct=a.is_correct,
             explanation=a.explanation,
             entity_name=a.entity_name,
-            bloom_level="remember",  # TODO: Store bloom level in answer model
+            bloom_level=a.bloom_level or "remember",
             difficulty=a.difficulty,
         )
         for a in result.answers
@@ -489,7 +490,7 @@ async def convert_to_flashcards(
 ):
     """
     Convert wrong answers from a quiz into flashcard suggestions.
-    
+
     Returns list of flashcard suggestions that can be created manually.
     """
     result_uuid = uuid.UUID(result_id)
@@ -534,6 +535,68 @@ async def convert_to_flashcards(
             for fc in flashcards
         ],
         "total_suggestions": len(flashcards),
+    }
+
+
+@router.post("/results/{result_id}/generate-flashcards")
+async def generate_flashcards_from_result(
+    result_id: str,
+    user_id: str = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_db),
+):
+    """
+    Generate and save flashcards from quiz wrong answers using LLM.
+
+    Unlike convert-to-flashcards (which only returns suggestions),
+    this endpoint actually creates and persists the flashcards.
+    """
+    from app.repositories.flashcard_repo import FlashcardRepository
+    from app.repositories.graph_repo import GraphRepository
+    from app.services.flashcard_generation_service import FlashcardGenerationService
+    from app.services.llm_service import LLMService
+
+    result_uuid = uuid.UUID(result_id)
+    result_repo = QuizResultRepository(session)
+    result = await result_repo.get_by_id_with_answers(result_uuid)
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Quiz result not found")
+
+    if str(result.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Not your quiz result")
+
+    # Build service with all dependencies
+    flashcard_repo = FlashcardRepository(session)
+    graph_repo = GraphRepository(session)
+    llm_service = LLMService()
+    quiz_result_repo = result_repo
+
+    generation_service = FlashcardGenerationService(
+        flashcard_repo=flashcard_repo,
+        graph_repo=graph_repo,
+        llm_service=llm_service,
+        quiz_result_repo=quiz_result_repo,
+    )
+
+    flashcards = await generation_service.generate_from_quiz_wrong_answers(
+        user_id=uuid.UUID(user_id),
+        quiz_result_id=result_uuid,
+        db_session=session,
+    )
+
+    await session.commit()
+
+    return {
+        "result_id": str(result.id),
+        "flashcards_created": len(flashcards),
+        "flashcards": [
+            FlashcardSuggestionResponse(
+                front=fc.front,
+                back=fc.back,
+                metadata=fc.card_metadata,
+            )
+            for fc in flashcards
+        ],
     }
 
 
@@ -615,17 +678,27 @@ async def get_weak_areas(
 ):
     """
     Get top weak areas across all quizzes.
-    
+
     Entities that user got wrong most frequently.
     """
     result_repo = QuizResultRepository(session)
     weak_areas = await result_repo.get_weak_areas(uuid.UUID(user_id), limit=limit)
 
+    if not weak_areas:
+        return []
+
+    # Fetch entity types from graph_entities
+    graph_repo = GraphRepository(session)
+    entity_names = [wa["entity_name"] for wa in weak_areas]
+    entity_types_map = await graph_repo.get_entity_types_by_names(
+        user_id=uuid.UUID(user_id), canonical_names=entity_names
+    )
+
     return [
         WeakAreaResponse(
             entity_name=wa["entity_name"],
-            entity_type="",  # TODO: Fetch entity type from graph
-            bloom_level="remember",  # Default
+            entity_type=entity_types_map.get(wa["entity_name"], ""),
+            bloom_level="remember",  # Default - can be enriched from quiz questions if needed
         )
         for wa in weak_areas
     ]

@@ -21,31 +21,24 @@ def upgrade() -> None:
     # ---------------------------------------------------------------
     # 1. Add user_id to graph_relations  (User Isolation BR-001)
     # ---------------------------------------------------------------
-    op.add_column(
-        "graph_relations",
-        sa.Column(
-            "user_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=True,  # nullable temporarily for backfill
-        ),
+    # Use IF NOT EXISTS for safety
+    op.execute(
+        "ALTER TABLE graph_relations ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE"
     )
 
-    # Backfill: copy user_id from the parent document
+    # Backfill: copy user_id from the parent document (only for NULL rows)
     op.execute(
         """
         UPDATE graph_relations gr
         SET user_id = d.user_id
         FROM documents d
-        WHERE gr.document_id = d.id
+        WHERE gr.document_id = d.id AND gr.user_id IS NULL
         """
     )
 
     # Now make it NOT NULL
-    op.alter_column(
-        "graph_relations",
-        "user_id",
-        nullable=False,
+    op.execute(
+        "ALTER TABLE graph_relations ALTER COLUMN user_id SET NOT NULL"
     )
 
     # Index for user-scoped queries
@@ -58,36 +51,15 @@ def upgrade() -> None:
     # ---------------------------------------------------------------
     # 2. Add version + updated_at to graph_entities
     # ---------------------------------------------------------------
-    op.add_column(
-        "graph_entities",
-        sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
-    )
-    op.add_column(
-        "graph_entities",
-        sa.Column(
-            "updated_at",
-            sa.TIMESTAMP(),
-            nullable=False,
-            server_default=sa.func.current_timestamp(),
-        ),
-    )
+    # Use raw SQL with IF NOT EXISTS for safety
+    op.execute("ALTER TABLE graph_entities ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
+    op.execute("ALTER TABLE graph_entities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
     # ---------------------------------------------------------------
     # 3. Add version + updated_at to graph_relations
     # ---------------------------------------------------------------
-    op.add_column(
-        "graph_relations",
-        sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
-    )
-    op.add_column(
-        "graph_relations",
-        sa.Column(
-            "updated_at",
-            sa.TIMESTAMP(),
-            nullable=False,
-            server_default=sa.func.current_timestamp(),
-        ),
-    )
+    op.execute("ALTER TABLE graph_relations ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1")
+    op.execute("ALTER TABLE graph_relations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP")
 
     # ---------------------------------------------------------------
     # 4. Create graph_edit_log table (audit trail)

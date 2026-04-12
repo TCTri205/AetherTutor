@@ -386,8 +386,44 @@ CREATE TABLE chat_sessions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     agent_type VARCHAR(50) CHECK (agent_type IN ('socratic_tutor', 'researcher', 'visualizer', 'examiner')),
     context_document_id UUID REFERENCES documents(id) ON DELETE SET NULL,
+    -- Socratic Tutor tracking (BR-006)
+    metadata JSONB DEFAULT '{}',
+    -- metadata stores: {"current_concept": "...", "attempt_count": 0, "last_response_type": "question"}
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+```
+
+**Socratic Tutor Metadata Schema (BR-006):**
+```json
+{
+  "current_concept": "Tên khái niệm đang thảo luận",
+  "attempt_count": 0,
+  "last_response_type": "question" | "hint" | "explanation",
+  "concept_changes": [
+    {"from": "...", "to": "...", "attempts": 3, "timestamp": "ISO"}
+  ]
+}
+```
+
+**Backend Tracking Logic:**
+```python
+# Khi nhận LLM response với current_concept field:
+if response.current_concept != session.metadata.current_concept:
+    # Concept changed → reset attempt_count
+    session.metadata.concept_changes.append({
+        "from": session.metadata.current_concept,
+        "to": response.current_concept,
+        "attempts": session.metadata.attempt_count,
+        "timestamp": now()
+    })
+    session.metadata.attempt_count = 0
+    session.metadata.current_concept = response.current_concept
+else:
+    # Same concept → increment
+    session.metadata.attempt_count += 1
+
+session.metadata.last_response_type = response.response_type
+```
 
 CREATE TABLE chat_messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

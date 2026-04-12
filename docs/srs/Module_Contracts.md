@@ -251,6 +251,7 @@ interface DeleteDocumentResponse {
 | 400 | `URL_INACCESSIBLE` | URL không accessible | "Cannot access URL" |
 | 404 | `DOCUMENT_NOT_FOUND` | Document ID không tồn tại | "Document not found" |
 | 409 | `DUPLICATE_DOCUMENT` | File đã được upload trước đó | "Document already exists" |
+| **409** | **`CONCURRENT_PROCESSING`** | **User đã có document đang xử lý** | **"Document khác đang được xử lý. Vui lòng đợi hoàn tất trước khi upload thêm."** |
 | 429 | `QUOTA_EXCEEDED` | Vượt giới hạn upload/ngày | "Daily upload quota exceeded" |
 | 500 | `INTERNAL_ERROR` | Server error | "Internal server error" |
 
@@ -263,10 +264,12 @@ interface DeleteDocumentResponse {
 - Entity & Relation CRUD
 - Dual-level retrieval (entity + concept)
 - Subgraph extraction cho visualization
+- **Entity-Document many-to-many relationship management**
 
 **KHÔNG làm:**
 - ❌ Không trực tiếp gọi LLM để extract entities (việc của Worker)
 - ❌ Không lưu embeddings (việc của ChromaDB service)
+- ❌ **KHÔNG xóa entities trực tiếp khi xóa document (qua entity_documents junction)**
 
 ### Dependencies
 
@@ -499,9 +502,37 @@ interface MergeEntitiesResponse {
   data: {
     status: 'success';
     primary_id: string;
+    transferred_relations: number;
+    transferred_documents: number;    // Số document associations đã chuyển
+    transferred_note_links: number;  // Số note links đã chuyển
     message: string;
   };
 }
+```
+
+**⚠️ CRITICAL — Merge Cascade Logic (BẮT BUỘC):**
+```
+Khi merge secondary → primary:
+  1. Chuyển relations của secondary sang primary
+  2. Chuyển document associations (entity_documents table):
+     - INSERT INTO entity_documents (entity_id=primary, document_id)
+       SELECT secondary, document_id FROM entity_documents 
+       WHERE entity_id = secondary
+       ON CONFLICT DO NOTHING
+     - Xóa associations cũ của secondary
+  3. Chuyển note_entity_links:
+     - UPDATE note_entity_links 
+       SET entity_id = primary 
+       WHERE entity_id = secondary
+  4. Chuyển flashcard_entities (nếu có):
+     - UPDATE flashcard_entities 
+       SET entity_id = primary 
+       WHERE entity_id = secondary
+  5. Xóa secondary entity
+  6. Rebuild NetworkX graph từ SQL
+
+⚠️ Nếu KHÔNG thực hiện steps 2-4, dữ liệu sẽ bị orphan 
+   (notes, flashcards, documents trỏ tới entity đã xóa).
 ```
 
 ---
@@ -882,9 +913,10 @@ interface SubmitQuizResponse {
   success: true;
   data: {
     quiz_id: string;
-    score: number;               // Correct count
+    score: number;               // Percentage 0-100 (e.g., 85.5)
+    correct_answers: number;     // Exact count of correct answers
     total_questions: number;
-    percentage: number;          // 0-100
+    weak_areas: string[];        // Entity names user struggled with
     results: Array<{
       question_id: string;
       user_answer: string | string[];
@@ -894,6 +926,16 @@ interface SubmitQuizResponse {
     }>;
   };
 }
+```
+
+**⚠️ CRITICAL — Score Field Semantics (KHỚP VỚI CODE):**
+```
+- `score`: FLOAT, percentage 0-100 (ví dụ: 85.5 = 85.5%)
+- `correct_answers`: INT, số câu trả lời đúng (ví dụ: 17/20 = 17)
+- `total_questions`: INT, tổng số câu hỏi
+
+KHÔNG được nhầm lẫn: score ≠ correct_answers
+Frontend PHẢI hiển thị cả hai: "17/20 đúng (85%)"
 ```
 
 ### Error Contract
@@ -966,8 +1008,27 @@ interface CreateNoteResponse {
       context: string;           // Text showing why suggested
       matched_entities: string[];
     }>;
+    embedding_status: 'pending' | 'completed' | 'failed';
+    // 'pending': Background task queued
+    // 'completed': Embedding generated
+    // 'failed': Will retry in background
   };
 }
+```
+
+**⚠️ CRITICAL — Note Embedding (BR-009 enhancement):**
+```
+SAU KHI lưu note:
+    1. Queue ARQ task 'embed_note' với note content
+    2. Trả về response ngay với embedding_status = 'pending'
+    3. Worker sinh embedding → lưu ChromaDB với metadata:
+       - "content_type": "note"
+       - "note_id": UUID
+       - "user_id": UUID
+    4. Update note record: embedding_status = 'completed'
+
+⚠️ Notes PHẢI được embed để AI retrieval hoạt động.
+   Nếu không, chat AI sẽ không thể tìm notes liên quan.
 ```
 
 ---
@@ -1122,7 +1183,8 @@ async def process_document_task(document_id: UUID, user_id: UUID):
     2. Chunk
     3. Extract entities/relations
     4. Build graph
-    5. Generate embeddings
+    5. Generate embeddings (chunks + entities)
+    6. Store to ChromaDB (with content_type metadata)
     """
     pass
 
@@ -1135,9 +1197,27 @@ async def extract_entities_task(document_id: UUID, user_id: UUID, chunk_ids: lis
     pass
 
 @worker.task(name='generate_embeddings', timeout=600, retries=2)
-async def generate_embeddings_task(document_id: UUID, user_id: UUID, chunk_ids: list[UUID]):
+async def generate_embeddings_task(
+    document_id: UUID, 
+    user_id: UUID, 
+    chunk_ids: list[UUID],
+    entity_ids: list[UUID],  # ← NEW: Entity IDs để embed
+):
     """
-    ChromaDB vector storage.
+    ChromaDB vector storage cho CẢ chunks VÀ entities.
+    
+    Metadata cho mỗi embedding:
+    - "user_id": UUID
+    - "document_id": UUID
+    - "content_type": "chunk" | "entity"
+    - "chunk_id": UUID (nếu content_type="chunk")
+    - "entity_id": UUID (nếu content_type="entity")
+    - "embedding_model": string
+    - "embedding_dim": int
+    
+    ⚠️ KHÔNG được chỉ embed chunks. Entities PHẢI được embed
+    để LightRAG dual-level retrieval hoạt động.
+    
     Medium priority, 60s backoff retry.
     """
     pass
@@ -1147,6 +1227,52 @@ async def construct_graph_task(document_id: UUID, user_id: UUID, entities: list[
     """
     NetworkX graph building.
     Medium priority, single retry.
+    """
+    pass
+
+@worker.task(name='embed_note', timeout=60, retries=2)
+async def embed_note_task(note_id: UUID, user_id: UUID, content: str):
+    """
+    Generate embedding cho note content.
+    Lưu vào ChromaDB với metadata:
+    - "content_type": "note"
+    - "note_id": UUID
+    
+    ⚠️ Notes PHẢI được embed để AI retrieval hoạt động.
+    """
+    pass
+
+@worker.task(name='embed_obsidian_file', timeout=60, retries=2)
+async def embed_obsidian_file_task(
+    file_path: str, 
+    user_id: UUID, 
+    content: str,
+    file_name: str,
+):
+    """
+    Generate embedding cho Obsidian markdown file.
+    Lưu vào ChromaDB với metadata:
+    - "content_type": "obsidian"
+    - "file_path": string
+    - "file_name": string
+    
+    ⚠️ Obsidian files PHẢI được embed để AI retrieval hoạt động.
+    """
+    pass
+
+@worker.task(name='rollback_document', timeout=60, retries=1)
+async def rollback_document_task(document_id: UUID, user_id: UUID):
+    """
+    Rollback partial data TRƯỚC KHI retry.
+    
+    Thực hiện:
+    1. DELETE FROM document_chunks WHERE document_id = :doc_id
+    2. DELETE FROM graph_entities WHERE document_id = :doc_id
+    3. DELETE FROM graph_relations WHERE document_id = :doc_id
+    4. ChromaDB: delete(where={"document_id": doc_id})
+    5. NetworkX: remove nodes cho document
+    
+    ⚠️ BẮT BUỘC chạy task này TRƯỚC KHI retry document bị failed.
     """
     pass
 

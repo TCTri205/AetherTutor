@@ -1,3 +1,4 @@
+import '../styles/tokens.css';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import ReactFlow, {
   Background,
@@ -230,7 +231,7 @@ export default function Zettelkasten() {
               <ChevronLeft className="w-4 h-4 mr-2" />
               Về List
             </Button>
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <h2 className="text-xl font-bold text-primary flex items-center gap-2">
               <GitBranch className="w-5 h-5 text-primary" />
               Note Graph
             </h2>
@@ -245,7 +246,7 @@ export default function Zettelkasten() {
         </div>
 
         {/* ReactFlow Canvas */}
-        <div className="flex-1 rounded-2xl overflow-hidden border border-white/10">
+        <div className="flex-1 rounded-2xl overflow-hidden border border-border-primary">
           <ReactFlow
             nodes={rfNodes}
             edges={rfEdges}
@@ -309,7 +310,7 @@ export default function Zettelkasten() {
               <Card className="border-primary/20">
                 <CardContent className="p-6 space-y-4">
                   <input
-                    className="w-full bg-transparent text-2xl font-bold text-white focus:outline-none"
+                    className="w-full bg-transparent text-2xl font-bold text-primary focus:outline-none"
                     value={editForm.title}
                     onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                     placeholder="Tiêu đề..."
@@ -361,7 +362,7 @@ export default function Zettelkasten() {
             ) : (
               <>
                 {/* Preview */}
-                <Card className="border-white/5">
+                <Card className="border-border-primary">
                   <CardContent className="p-8 prose prose-invert prose-sm max-w-none">
                     <div className="flex items-center gap-2 mb-4">
                       <Badge variant="outline" className={NOTE_TYPE_COLORS[currentNote.note_type as NoteType]}>
@@ -371,7 +372,7 @@ export default function Zettelkasten() {
                         <Badge key={i} variant="outline" className="text-[10px]">#{tag}</Badge>
                       ))}
                     </div>
-                    <h1 className="text-3xl font-bold text-white mb-6">{currentNote.title}</h1>
+                    <h1 className="text-3xl font-bold text-primary mb-6">{currentNote.title}</h1>
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm, remarkMath]}
                       rehypePlugins={[rehypeKatex]}
@@ -383,9 +384,9 @@ export default function Zettelkasten() {
 
                 {/* Backlinks */}
                 {(currentNote.incoming_links.length > 0 || currentNote.outgoing_links.length > 0) && (
-                  <Card className="border-white/5 mt-6">
+                  <Card className="border-border-primary mt-6">
                     <CardContent className="p-6">
-                      <h3 className="font-bold text-white mb-4 flex items-center gap-2">
+                      <h3 className="font-bold text-primary mb-4 flex items-center gap-2">
                         <Link className="w-4 h-4 text-primary" />
                         Liên kết
                       </h3>
@@ -396,8 +397,8 @@ export default function Zettelkasten() {
                             {currentNote.incoming_links.map((link) => (
                               <div key={link.id} className="flex items-center gap-2 text-sm">
                                 <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" />
-                                <span className="text-muted-foreground">Note ID: {String(link.source_note_id).slice(0, 8)}</span>
-                                {link.context && <span className="text-xs text-white/60 truncate">{link.context}</span>}
+                                <span className="text-secondary">Note ID: {String(link.source_note_id).slice(0, 8)}</span>
+                                {link.context && <span className="text-xs text-tertiary truncate">{link.context}</span>}
                               </div>
                             ))}
                           </div>
@@ -410,8 +411,8 @@ export default function Zettelkasten() {
                             {currentNote.outgoing_links.map((link) => (
                               <div key={link.id} className="flex items-center gap-2 text-sm">
                                 <ArrowUpRight className="w-3.5 h-3.5 text-blue-400" />
-                                <span className="text-muted-foreground">→ Note ID: {String(link.target_note_id).slice(0, 8)}</span>
-                                {link.context && <span className="text-xs text-white/60 truncate">{link.context}</span>}
+                                <span className="text-secondary">→ Note ID: {String(link.target_note_id).slice(0, 8)}</span>
+                                {link.context && <span className="text-xs text-tertiary truncate">{link.context}</span>}
                               </div>
                             ))}
                           </div>
@@ -458,11 +459,11 @@ export default function Zettelkasten() {
       {/* Header */}
       <section className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2">
-          <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+          <h2 className="text-3xl font-bold text-primary tracking-tight flex items-center gap-3">
             <FileText className="w-8 h-8 text-primary" />
             Zettelkasten
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-secondary">
             Hệ thống ghi chú liên kết — xây dựng mạng lưới tri thức cá nhân.
           </p>
         </div>
@@ -479,9 +480,9 @@ export default function Zettelkasten() {
       </section>
 
       {/* Search & Filter Bar */}
-      <div className="flex flex-col md:flex-row gap-4 bg-white/5 p-4 rounded-2xl border border-white/5 glass">
+      <div className="flex flex-col md:flex-row gap-4 bg-secondary p-4 rounded-2xl border border-border-primary glass">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary" />
           <input
             className="w-full bg-background border border-border rounded-xl px-10 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
             placeholder="Tìm kiếm notes..."
@@ -509,11 +510,11 @@ export default function Zettelkasten() {
 
       {/* Create Dialog */}
       {showNewDialog && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-overlay z-50 flex items-center justify-center p-4">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg">
-            <Card className="border-white/10">
+            <Card className="border-border-primary">
               <CardContent className="p-6 space-y-4">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <h3 className="text-xl font-bold text-primary flex items-center gap-2">
                   <FilePlus className="w-5 h-5 text-primary" />
                   Tạo Note mới
                 </h3>
@@ -583,17 +584,17 @@ export default function Zettelkasten() {
       <div className="space-y-3">
         {isLoading && notes.length === 0
           ? Array.from({ length: 5 }).map((_, i) => (
-              <Card key={i} className="h-20 border-white/5">
+              <Card key={i} className="h-20 border-border-primary">
                 <CardContent className="p-5 animate-pulse">
-                  <div className="h-4 bg-white/10 rounded w-1/3 mb-2" />
-                  <div className="h-3 bg-white/5 rounded w-1/4" />
+                  <div className="h-4 bg-tertiary rounded w-1/3 mb-2" />
+                  <div className="h-3 bg-secondary rounded w-1/4" />
                 </CardContent>
               </Card>
             ))
           : notes.map((note) => (
               <Card
                 key={note.id}
-                className="border-white/5 hover:border-primary/20 transition-all cursor-pointer group"
+                className="border-border-primary hover:border-primary/20 transition-all cursor-pointer group"
                 onClick={() => handleSelectNote(note.id)}
               >
                 <CardContent className="p-5 flex items-center justify-between">
@@ -602,9 +603,9 @@ export default function Zettelkasten() {
                       <Badge variant="outline" className={cn('text-[10px]', NOTE_TYPE_COLORS[note.note_type as NoteType])}>
                         {NOTE_TYPE_LABELS[note.note_type as NoteType]}
                       </Badge>
-                      <h4 className="font-bold text-white truncate">{note.title}</h4>
+                      <h4 className="font-bold text-primary truncate">{note.title}</h4>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-3 text-xs text-secondary">
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
                         {formatDistanceToNow(new Date(note.updated_at), { locale: vi })}
@@ -633,13 +634,13 @@ export default function Zettelkasten() {
 
       {/* Empty state */}
       {!isLoading && notes.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-3xl gap-6">
-          <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-            <FileText className="w-10 h-10 text-muted-foreground opacity-30" />
+        <div className="flex flex-col items-center justify-center py-20 bg-secondary border-2 border-dashed border-border-primary rounded-3xl gap-6">
+          <div className="w-20 h-20 rounded-full bg-tertiary flex items-center justify-center border border-border-primary">
+            <FileText className="w-10 h-10 text-tertiary opacity-30" />
           </div>
           <div className="text-center space-y-2">
-            <p className="text-white font-bold text-lg">Chưa có note nào</p>
-            <p className="text-muted-foreground">Bắt đầu xây dựng mạng lưới tri thức cá nhân.</p>
+            <p className="text-primary font-bold text-lg">Chưa có note nào</p>
+            <p className="text-secondary">Bắt đầu xây dựng mạng lưới tri thức cá nhân.</p>
           </div>
           <Button size="lg" onClick={() => setShowNewDialog(true)}>
             <Plus className="w-4 h-4 mr-2" />
@@ -650,7 +651,7 @@ export default function Zettelkasten() {
 
       {/* Total */}
       {totalNotes > 0 && (
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-center text-xs text-secondary">
           Hiển thị {notes.length} / {totalNotes} notes
         </p>
       )}
