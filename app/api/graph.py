@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from ..database import get_db
 from ..repositories.graph_repo import GraphRepository
 from ..repositories.document_repo import DocumentRepository
 from ..core.retriever import Retriever
 from ..services.llm_service import llm_service
 from ..services.cross_verification_service import cross_verification_service
-from ..services.entity_alias_service import get_alias_resolution_service, EntityAliasResolutionService
+from ..services.entity_alias_service import get_alias_resolution_service
 from ..services.backlink_service import BacklinkService
 from ..services.tag_service import TagService
 from ..services.entity_resolution_service import EntityResolutionService
+from ..core.visualizer_agent import get_visualizer_agent
 from ..schemas.lightrag import (
     QueryRequest,
     QueryResponse,
@@ -24,9 +25,19 @@ from ..schemas.lightrag import (
     MultiDocQueryResponse,
     CrossVerificationSummary,
     DocumentGraphResponse,
+    MermaidRequest,
+    MermaidResponse,
+    MermaidMetadata,
+    EntityCreateRequest,
+    EntityUpdateRequest,
+    EntityResponse,
+    RelationCreateRequest,
+    RelationResponse,
 )
 from .dependencies import get_optional_user_id, get_current_user_id
 from ..worker.queue import get_redis_pool
+from ..core.exceptions import DuplicateResourceError, ResourceNotFoundError
+from ..core.graph_cache import get_graph_cache
 from pydantic import BaseModel
 import uuid
 
@@ -195,7 +206,7 @@ async def export_graph(
     Export the graph in various formats (graphml, json).
     """
     from ..core.graph_builder import get_graph_builder
-    from fastapi.responses import Response, StreamingResponse
+    from fastapi.responses import Response
     import io
     
     builder = get_graph_builder()
@@ -716,4 +727,511 @@ async def merge_entities(
     except Exception as e:
         await db.rollback()
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi gộp thực thể: {str(e)}")
+
+
+# =============================================
+# Sprint 8: Mermaid Diagram Generation
+# =============================================
+
+@router.post("/mermaid", response_model=MermaidResponse)
+async def generate_mermaid_diagram(
+    request: MermaidRequest,
+    user_id: Optional[uuid.UUID] = Depends(get_optional_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate Mermaid diagram từ Knowledge Graph.
+
+    Supports 3 formats:
+    - mindmap: Sơ đồ tư duy cho phân tích chủ đề
+    - flowchart_td: Flowchart top-down cho quy trình
+    - flowchart_lr: Flowchart left-right cho mối quan hệ
+
+    Có thể chọn topic cụ thể để trích xuất subgraph, hoặc lấy toàn bộ graph.
+    """
+    try:
+        # Lấy graph data từ database
+        graph_repo = GraphRepository(db)
+        visualizer = get_visualizer_agent()
+
+        # Xác định document_id
+        doc_id = None
+        if request.document_id:
+            try:
+                doc_id = uuid.UUID(request.document_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid document_id format")
+
+        # Nếu có document_id cụ thể
+        if doc_id:
+            # Validate document tồn tại và thuộc về user
+            if user_id:
+                doc_repo = DocumentRepository(db)
+                doc = await doc_repo.get_by_id(doc_id)
+                if not doc:
+                    raise HTTPException(status_code=404, detail="Document not found")
+                # User isolation check
+                if hasattr(doc, 'user_id') and doc.user_id != user_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Access denied: Document belongs to another user"
+                    )
+
+            # Lấy entities và relations từ document
+            entities = await graph_repo.get_all_entities_for_document(doc_id)
+            relations = await graph_repo.get_all_relations_for_document(doc_id)
+
+            # Convert sang format cho visualizer
+            nodes = [
+                {
+                    "id": str(entity.id),
+                    "name": entity.canonical_name,
+                    "type": entity.entity_type,
+                    "description": entity.description,
+                    "confidence": entity.confidence,
+                }
+                for entity in entities
+            ]
+
+            # Build node_id map để resolve source/target
+            entity_id_map = {str(e.id): e.canonical_name for e in entities}
+
+            edges = []
+            for rel in relations:
+                source_name = entity_id_map.get(str(rel.source_entity_id))
+                target_name = entity_id_map.get(str(rel.target_entity_id))
+                if source_name and target_name:
+                    edges.append({
+                        "source": str(rel.source_entity_id),
+                        "target": str(rel.target_entity_id),
+                        "label": rel.relation_type,
+                        "description": rel.description,
+                    })
+
+            graph_data = {"nodes": nodes, "edges": edges}
+
+        else:
+            # Global graph: lấy tất cả entities/relations của user
+            if not user_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="user_id required for global graph. Provide document_id or authenticate."
+                )
+
+            entities = await graph_repo.get_user_entities(user_id)
+            relations = await graph_repo.get_user_relations(user_id)
+
+            nodes = [
+                {
+                    "id": str(entity.id),
+                    "name": entity.canonical_name,
+                    "type": entity.entity_type,
+                    "description": entity.description,
+                    "confidence": entity.confidence,
+                    "document_id": str(entity.document_id),
+                }
+                for entity in entities
+            ]
+
+            entity_id_map = {str(e.id): e.canonical_name for e in entities}
+            edges = []
+            for rel in relations:
+                source_name = entity_id_map.get(str(rel.source_entity_id))
+                target_name = entity_id_map.get(str(rel.target_entity_id))
+                if source_name and target_name:
+                    edges.append({
+                        "source": str(rel.source_entity_id),
+                        "target": str(rel.target_entity_id),
+                        "label": rel.relation_type,
+                        "description": rel.description,
+                    })
+
+            graph_data = {"nodes": nodes, "edges": edges}
+
+        # Generate Mermaid diagram
+        result = await visualizer.generate_mermaid(
+            graph_data=graph_data,
+            topic=request.topic,
+            max_nodes=request.max_nodes,
+            max_depth=request.max_depth,
+            format=request.format,
+        )
+
+        return MermaidResponse(
+            mermaid_code=result["mermaid_code"],
+            metadata=MermaidMetadata(
+                total_nodes=result["metadata"]["total_nodes"],
+                total_edges=result["metadata"]["total_edges"],
+                truncated=result["metadata"]["truncated"],
+                format=result["metadata"]["format"],
+                document_id=request.document_id,
+            ),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error generating Mermaid diagram: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Lỗi khi tạo diagram: {str(e)}")
+
+
+# =========================================================================
+# Stage 3: Interactive Graph Editing — CRUD Endpoints
+# =========================================================================
+
+def _entity_to_response(entity) -> EntityResponse:
+    """Convert GraphEntity model to EntityResponse schema."""
+    return EntityResponse(
+        id=entity.id,
+        document_id=entity.document_id,
+        user_id=entity.user_id,
+        canonical_name=entity.canonical_name,
+        entity_type=entity.entity_type,
+        description=entity.description or "",
+        confidence=entity.confidence,
+        source=entity.source or "manual",
+        tags=entity.tags or [],
+        metadata=entity.metadata_ or {},
+        version=entity.version,
+        created_at=entity.created_at,
+        updated_at=getattr(entity, 'updated_at', entity.created_at),
+    )
+
+
+def _relation_to_response(relation) -> RelationResponse:
+    """Convert GraphRelation model to RelationResponse schema."""
+    return RelationResponse(
+        id=relation.id,
+        document_id=relation.document_id,
+        source_entity_id=relation.source_entity_id,
+        target_entity_id=relation.target_entity_id,
+        relation_type=relation.relation_type,
+        description=relation.description or "",
+        source=relation.source or "manual",
+        version=relation.version,
+        created_at=relation.created_at,
+        updated_at=getattr(relation, 'updated_at', relation.created_at),
+    )
+
+
+@router.post(
+    "/entities",
+    response_model=EntityResponse,
+    status_code=201,
+    summary="Create a new graph entity",
+)
+async def create_entity(
+    request: EntityCreateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new graph entity for the authenticated user.
+
+    Validates:
+    - Entity name must be unique within the document
+    - User must own the document
+    """
+    graph_repo = GraphRepository(db)
+
+    # TODO: Validate user owns document_id (need document_repo check)
+    # For now, we trust the user_id passed in
+
+    try:
+        entity_data = {
+            "canonical_name": request.canonical_name,
+            "entity_type": request.entity_type,
+            "description": request.description,
+            "confidence": request.confidence,
+            "source": request.source,
+            "tags": request.tags,
+            "metadata": request.metadata,
+        }
+
+        # We need a document_id — for now, use the first document of the user
+        # In production, this should be explicitly passed or derived
+        from ..repositories.document_repo import DocumentRepository
+        doc_repo = DocumentRepository(db)
+        user_docs = await doc_repo.get_user_documents(user_id)
+        if not user_docs:
+            raise HTTPException(status_code=400, detail="User has no documents. Create a document first.")
+
+        document_id = user_docs[0].id
+
+        entity = await graph_repo.create_entity(
+            entity_data=entity_data,
+            user_id=user_id,
+            document_id=document_id,
+        )
+
+        # Audit log
+        await graph_repo.log_edit(
+            user_id=user_id,
+            action="CREATE",
+            entity_type="entity",
+            document_id=document_id,
+            entity_id=entity.id,
+            new_value=entity_data,
+        )
+
+        # Invalidate cache
+        await get_graph_cache().invalidate(document_id)
+
+        return _entity_to_response(entity)
+
+    except DuplicateResourceError as e:
+        raise HTTPException(status_code=409, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put(
+    "/entities/{entity_id}",
+    response_model=EntityResponse,
+    summary="Update an existing graph entity",
+)
+async def update_entity(
+    entity_id: uuid.UUID,
+    request: EntityUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update an existing graph entity with optimistic concurrency control.
+
+    Requires:
+    - expected_version: current version number (for conflict detection)
+    """
+    graph_repo = GraphRepository(db)
+
+    try:
+        # Build updates dict (only non-None fields)
+        updates = {k: v for k, v in request.model_dump(exclude_unset=True).items() if k != "expected_version"}
+
+        if not updates:
+            raise HTTPException(status_code=400, detail="No update fields provided")
+
+        entity = await graph_repo.update_entity(
+            entity_id=entity_id,
+            updates=updates,
+            expected_version=request.expected_version,
+            user_id=user_id,
+        )
+
+        # Audit log
+        await graph_repo.log_edit(
+            user_id=user_id,
+            action="UPDATE",
+            entity_type="entity",
+            document_id=entity.document_id,
+            entity_id=entity_id,
+            new_value=updates,
+        )
+
+        # Invalidate cache
+        await get_graph_cache().invalidate(entity.document_id)
+
+        return _entity_to_response(entity)
+
+    except DuplicateResourceError as e:
+        raise HTTPException(
+            status_code=409,
+            detail=e.message,
+            headers={"X-Current-Version": str(e.details.get("current_version", 0))} if e.details else None,
+        )
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/entities/{entity_id}",
+    status_code=204,
+    summary="Delete a graph entity",
+)
+async def delete_entity(
+    entity_id: uuid.UUID,
+    expected_version: int = Query(..., ge=1, description="Optimistic concurrency version"),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a graph entity.
+
+    Cascade: all relations involving this entity will be deleted (FK constraint).
+    """
+    graph_repo = GraphRepository(db)
+
+    try:
+        # Get entity info for audit log and cache invalidation
+        from sqlalchemy import select as sa_select
+        from ..models.graph import GraphEntity as GraphEntityModel
+        result = await db.execute(
+            sa_select(GraphEntityModel).where(GraphEntityModel.id == entity_id)
+        )
+        entity = result.scalar_one_or_none()
+        if not entity:
+            raise HTTPException(status_code=404, detail="Entity not found")
+
+        await graph_repo.delete_entity(
+            entity_id=entity_id,
+            expected_version=expected_version,
+            user_id=user_id,
+        )
+
+        # Audit log
+        await graph_repo.log_edit(
+            user_id=user_id,
+            action="DELETE",
+            entity_type="entity",
+            document_id=entity.document_id,
+            entity_id=entity_id,
+        )
+
+        # Invalidate cache
+        await get_graph_cache().invalidate(entity.document_id)
+
+        return None
+
+    except DuplicateResourceError as e:
+        raise HTTPException(status_code=409, detail=e.message)
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/relations",
+    response_model=RelationResponse,
+    status_code=201,
+    summary="Create a new graph relation",
+)
+async def create_relation(
+    request: RelationCreateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new graph relation (edge) between two entities.
+
+    Validates:
+    - Source and target entities must exist and belong to the user
+    - Cannot create self-referential relations (source != target)
+    """
+    graph_repo = GraphRepository(db)
+
+    try:
+        # Get document_id from source entity
+        from ..models.graph import GraphEntity as GraphEntityModel
+        from sqlalchemy import select as sa_select
+        result = await db.execute(
+            sa_select(GraphEntityModel.document_id).where(GraphEntityModel.id == request.source_entity_id)
+        )
+        doc_row = result.scalar_one_or_none()
+        if not doc_row:
+            raise HTTPException(status_code=404, detail="Source entity not found")
+        document_id = doc_row
+
+        relation_data = {
+            "source_entity_id": request.source_entity_id,
+            "target_entity_id": request.target_entity_id,
+            "relation_type": request.relation_type,
+            "description": request.description,
+            "source": request.source,
+        }
+
+        relation = await graph_repo.create_relation(
+            relation_data=relation_data,
+            user_id=user_id,
+            document_id=document_id,
+        )
+
+        # Audit log
+        await graph_repo.log_edit(
+            user_id=user_id,
+            action="CREATE",
+            entity_type="relation",
+            document_id=document_id,
+            relation_id=relation.id,
+            new_value=relation_data,
+        )
+
+        # Invalidate cache
+        await get_graph_cache().invalidate(document_id)
+
+        return _relation_to_response(relation)
+
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/relations/{relation_id}",
+    status_code=204,
+    summary="Delete a graph relation",
+)
+async def delete_relation(
+    relation_id: uuid.UUID,
+    expected_version: int = Query(..., ge=1, description="Optimistic concurrency version"),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a graph relation (edge).
+    """
+    graph_repo = GraphRepository(db)
+
+    try:
+        # Get relation info for audit log and cache invalidation
+        from sqlalchemy import select as sa_select
+        from ..models.graph import GraphRelation as GraphRelationModel
+        result = await db.execute(
+            sa_select(GraphRelationModel).where(GraphRelationModel.id == relation_id)
+        )
+        relation = result.scalar_one_or_none()
+        if not relation:
+            raise HTTPException(status_code=404, detail="Relation not found")
+
+        await graph_repo.delete_relation(
+            relation_id=relation_id,
+            expected_version=expected_version,
+            user_id=user_id,
+        )
+
+        # Audit log
+        await graph_repo.log_edit(
+            user_id=user_id,
+            action="DELETE",
+            entity_type="relation",
+            document_id=relation.document_id,
+            relation_id=relation_id,
+        )
+
+        # Invalidate cache
+        await get_graph_cache().invalidate(relation.document_id)
+
+        return None
+
+    except DuplicateResourceError as e:
+        raise HTTPException(status_code=409, detail=e.message)
+    except ResourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 

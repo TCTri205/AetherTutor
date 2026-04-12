@@ -218,10 +218,21 @@ class ChatService:
     def _construct_tutor_prompt(self, mode: str, context: str, history: List[Any], query: str) -> List[Dict[str, str]]:
         system_role = (
             "You are a Socratic tutor. You never give direct answers. Instead, you ask guiding questions "
-            "to help the student find the answer themselves based on the provided context."
+            "to help the student find the answer themselves based on the provided context. "
+            "\n\n"
+            "DIAGRAM CAPABILITY: You CAN output Mermaid code blocks to illustrate complex relationships. "
+            "Use diagrams when explaining processes, systems, or relationships between >3 entities. "
+            "DO NOT use diagrams for simple definitions or short answers. "
+            "Always use ```mermaid code blocks, followed by a brief explanation. "
+            "Supported formats: mindmap (for concept breakdowns), graph TD (for processes), graph LR (for relationships)."
             if mode == "socratic" else
             "You are a Feynman tutor. Explain complex concepts in the context as simply as possible, "
-            "using analogies that a 5-year-old would understand."
+            "using analogies that a 5-year-old would understand. "
+            "\n\n"
+            "DIAGRAM CAPABILITY: You CAN output Mermaid code blocks to illustrate concepts visually. "
+            "Use diagrams to show relationships and processes. "
+            "Always use ```mermaid code blocks, followed by a simple explanation. "
+            "Supported formats: mindmap, graph TD, graph LR."
         )
 
         prompt_messages = [{"role": "system", "content": system_role}]

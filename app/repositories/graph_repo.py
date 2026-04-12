@@ -3,10 +3,14 @@ from sqlalchemy.dialects.postgresql import insert
 import sqlalchemy as sa
 from sqlalchemy import select, delete, or_, func
 from sqlalchemy.orm import selectinload
-from ..models.graph import GraphEntity, GraphRelation
+from ..models.graph import GraphEntity, GraphRelation, GraphEditLog
+from ..core.exceptions import DuplicateResourceError, ResourceNotFoundError
 from typing import List, Dict, Any, Optional
 import uuid
 from .base import BaseRepository
+import logging
+
+logger = logging.getLogger(__name__)
 
 class GraphRepository(BaseRepository[GraphEntity]):
     def __init__(self, session: AsyncSession):
@@ -267,5 +271,297 @@ class GraphRepository(BaseRepository[GraphEntity]):
                     # Quan hệ này đã tồn tại ở thực thể mới, xóa quan hệ cũ
                     await self.session.delete(rel)
                     await self.session.flush()
-        
+
         await self.session.flush()
+
+    async def get_all_entities_for_document(self, document_id: uuid.UUID) -> List[GraphEntity]:
+        """Lấy tất cả entities của một document."""
+        stmt = select(GraphEntity).where(GraphEntity.document_id == document_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_relations_for_document(self, document_id: uuid.UUID) -> List[GraphRelation]:
+        """Lấy tất cả relations của một document kèm entity info."""
+        stmt = (
+            select(GraphRelation)
+            .options(
+                selectinload(GraphRelation.source_entity),
+                selectinload(GraphRelation.target_entity),
+            )
+            .where(GraphRelation.document_id == document_id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_user_entities(self, user_id: uuid.UUID) -> List[GraphEntity]:
+        """Lấy tất cả entities của một user (global graph)."""
+        stmt = select(GraphEntity).where(GraphEntity.user_id == user_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_user_relations(self, user_id: uuid.UUID) -> List[GraphRelation]:
+        """Lấy tất cả relations của một user (global graph)."""
+        stmt = (
+            select(GraphRelation)
+            .options(
+                selectinload(GraphRelation.source_entity),
+                selectinload(GraphRelation.target_entity),
+            )
+            .where(GraphRelation.source_entity.has(user_id=user_id))
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    # =========================================================================
+    # Stage 3: Interactive Graph Editing — CRUD Operations
+    # =========================================================================
+
+    async def create_entity(
+        self,
+        entity_data: Dict[str, Any],
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> GraphEntity:
+        """
+        Create a new graph entity.
+        Validates uniqueness of (document_id, canonical_name).
+        """
+        # Check for duplicate
+        existing = await self.session.execute(
+            select(GraphEntity).where(
+                GraphEntity.document_id == document_id,
+                GraphEntity.canonical_name == entity_data.get("canonical_name"),
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise DuplicateResourceError(
+                message=f"Entity '{entity_data.get('canonical_name')}' already exists in this document",
+                details={"canonical_name": entity_data.get("canonical_name"), "document_id": str(document_id)}
+            )
+
+        entity = GraphEntity(
+            document_id=document_id,
+            user_id=user_id,
+            **entity_data
+        )
+        self.session.add(entity)
+        await self.session.flush()
+        await self.session.refresh(entity)
+        return entity
+
+    async def update_entity(
+        self,
+        entity_id: uuid.UUID,
+        updates: Dict[str, Any],
+        expected_version: int,
+        user_id: uuid.UUID,
+    ) -> GraphEntity:
+        """
+        Update an entity with optimistic concurrency control.
+        Raises DuplicateResourceError (409) if version mismatch.
+        """
+        # Raw SQL for optimistic concurrency: WHERE id = ? AND version = ?
+        stmt = (
+            sa.update(GraphEntity)
+            .where(
+                GraphEntity.id == entity_id,
+                GraphEntity.user_id == user_id,
+                GraphEntity.version == expected_version,
+            )
+            .values(
+                **updates,
+                version=GraphEntity.version + 1,
+            )
+            .returning(GraphEntity)
+        )
+
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        entity = result.scalar_one_or_none()
+
+        if not entity:
+            # Check if entity exists but version mismatch
+            existing = await self.session.execute(
+                select(GraphEntity).where(
+                    GraphEntity.id == entity_id,
+                    GraphEntity.user_id == user_id,
+                )
+            )
+            existing_entity = existing.scalar_one_or_none()
+            if existing_entity:
+                raise DuplicateResourceError(
+                    message="Edit conflict: entity was modified by another user",
+                    details={"current_version": existing_entity.version, "expected_version": expected_version}
+                )
+            raise ResourceNotFoundError(
+                resource="Entity",
+                identifier=str(entity_id)
+            )
+
+        return entity
+
+    async def delete_entity(
+        self,
+        entity_id: uuid.UUID,
+        expected_version: int,
+        user_id: uuid.UUID,
+    ) -> bool:
+        """
+        Delete an entity with optimistic concurrency check.
+        Cascade deletes related relations via FK constraint.
+        """
+        stmt = (
+            delete(GraphEntity)
+            .where(
+                GraphEntity.id == entity_id,
+                GraphEntity.user_id == user_id,
+                GraphEntity.version == expected_version,
+            )
+        )
+
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+
+        if result.rowcount == 0:
+            # Check if entity exists but version mismatch
+            existing = await self.session.execute(
+                select(GraphEntity).where(
+                    GraphEntity.id == entity_id,
+                    GraphEntity.user_id == user_id,
+                )
+            )
+            existing_entity = existing.scalar_one_or_none()
+            if existing_entity:
+                raise DuplicateResourceError(
+                    message="Edit conflict: entity was modified by another user",
+                    details={"current_version": existing_entity.version, "expected_version": expected_version}
+                )
+            raise ResourceNotFoundError(
+                resource="Entity",
+                identifier=str(entity_id)
+            )
+
+        return True
+
+    async def create_relation(
+        self,
+        relation_data: Dict[str, Any],
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> GraphRelation:
+        """
+        Create a new graph relation.
+        Validates that source and target entities exist.
+        """
+        source_id = relation_data.get("source_entity_id")
+        target_id = relation_data.get("target_entity_id")
+
+        # Validate entities exist
+        for entity_id, role in [(source_id, "source"), (target_id, "target")]:
+            entity = await self.session.execute(
+                select(GraphEntity).where(
+                    GraphEntity.id == entity_id,
+                    GraphEntity.user_id == user_id,
+                )
+            )
+            if not entity.scalar_one_or_none():
+                raise ResourceNotFoundError(
+                    resource=f"{role.capitalize()} entity",
+                    identifier=str(entity_id)
+                )
+
+        # Validate source != target
+        if source_id == target_id:
+            from ..core.exceptions import BusinessLogicError
+            raise BusinessLogicError(
+                message="Cannot create a relation from an entity to itself",
+                error_code="SELF_REFERENCE",
+            )
+
+        relation = GraphRelation(
+            document_id=document_id,
+            user_id=user_id,
+            **relation_data
+        )
+        self.session.add(relation)
+        await self.session.flush()
+        await self.session.refresh(relation)
+        return relation
+
+    async def delete_relation(
+        self,
+        relation_id: uuid.UUID,
+        expected_version: int,
+        user_id: uuid.UUID,
+    ) -> bool:
+        """
+        Delete a relation with optimistic concurrency check.
+        """
+        stmt = (
+            delete(GraphRelation)
+            .where(
+                GraphRelation.id == relation_id,
+                GraphRelation.user_id == user_id,
+                GraphRelation.version == expected_version,
+            )
+        )
+
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+
+        if result.rowcount == 0:
+            existing = await self.session.execute(
+                select(GraphRelation).where(
+                    GraphRelation.id == relation_id,
+                    GraphRelation.user_id == user_id,
+                )
+            )
+            existing_relation = existing.scalar_one_or_none()
+            if existing_relation:
+                raise DuplicateResourceError(
+                    message="Edit conflict: relation was modified by another user",
+                    details={"current_version": existing_relation.version, "expected_version": expected_version}
+                )
+            raise ResourceNotFoundError(
+                resource="Relation",
+                identifier=str(relation_id)
+            )
+
+        return True
+
+    # =========================================================================
+    # Audit Logging
+    # =========================================================================
+
+    async def log_edit(
+        self,
+        user_id: Optional[uuid.UUID],
+        action: str,
+        entity_type: str,
+        document_id: Optional[uuid.UUID] = None,
+        entity_id: Optional[uuid.UUID] = None,
+        relation_id: Optional[uuid.UUID] = None,
+        old_value: Optional[Dict[str, Any]] = None,
+        new_value: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Async fire-and-forget audit log entry.
+        If logging fails, log warning but do NOT fail the main operation.
+        """
+        try:
+            log_entry = GraphEditLog(
+                user_id=user_id,
+                document_id=document_id,
+                entity_id=entity_id,
+                relation_id=relation_id,
+                action=action,
+                entity_type=entity_type,
+                old_value=old_value,
+                new_value=new_value,
+            )
+            self.session.add(log_entry)
+            # Do NOT flush here — let the main transaction handle it.
+            # If the main operation commits, this log will be committed too.
+            # If the main operation rolls back, this log rolls back too.
+        except Exception as e:
+            logger.warning(f"Failed to log graph edit (non-critical): {e}")

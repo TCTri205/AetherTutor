@@ -45,11 +45,33 @@ Trước khi yêu cầu AI code cho Module X:
 - Quản lý tri thức theo phương pháp **Zettelkasten**
 
 ### 1.2 Đối Tượng Người Dùng
+
+#### Personas
 | Persona | Mô tả | Use Case Chính |
 |---|---|---|
 | **Student** | Sinh viên, người tự học | Upload tài liệu → Chat Socratic → Ôn tập Flashcard |
 | **Researcher** | Nghiên cứu sinh, chuyên gia | Xây dựng Knowledge Graph → Multi-hop Query → Visualize |
 | **Professional** | Chuyên gia phân tích | Local Mode (Ollama) → Private Knowledge OS |
+
+#### Actor States (MVP — Single User)
+
+Trong MVP, chỉ có **1 Actor duy nhất** (Owner), nhưng Actor này tồn tại ở nhiều **trạng thái** khác nhau. Mỗi trạng thái quy định giới hạn quyền truy cập thực tế.
+
+| State | Điều kiện | Quyền truy cập | Giới hạn |
+|---|---|---|---|
+| **New User** | Chưa có document nào | Upload document, General Chat (không graph-aware) | Không thể dùng Graph/Flashcard/Quiz/Notes |
+| **Active User** | ≥ 1 document `completed` | Tất cả tính năng: Chat graph-aware, Flashcard, Quiz, Notes | Chịu rate limits (BR-012) |
+| **Processing User** | Có document đang `processing` | Vẫn dùng tính năng cũ được | Không upload thêm nếu đã có 1 document pending/processing (tránh queue overload) |
+| **Rate Limited** | Vượt quota trong ngày (BR-012) | Xem dữ liệu cũ, ôn tập flashcard | Không upload/generate flashcard/quiz mới |
+| **Degraded Mode** | LLM service unavailable | Xem graph, notes, flashcard đã có | Không chat, không generate flashcard/quiz mới |
+
+**State Transition:**
+```
+New User ──(upload + complete)──→ Active User
+Active User ──(upload)──→ Processing User ──(complete)──→ Active User
+Active User ──(rate limit hit)──→ Rate Limited ──(next day)──→ Active User
+Active User ──(LLM down)──→ Degraded Mode ──(LLM up)──→ Active User
+```
 
 ### 1.3 Phạm Vi MVP
 
@@ -188,8 +210,8 @@ graph TB
 
 **Chi tiết đầy đủ tại:** [Business_Rules.md#br-002](Business_Rules.md#br-002-document-processing-pipeline)
 
-### BR-003: Graph Construction Requires LLM (BẤT BIẾN)
-**Knowledge Graph KHÔNG được xây dựng nếu LLM service không phản hồi hoặc trả về lỗi.**
+### BR-003: Graph Construction Requires Entities (BẤT BIẾN)
+**Knowledge Graph KHÔNG được xây dựng nếu không có entities nào được trích xuất (từ spaCy hoặc LLM).**
 
 ### BR-004: Flashcard Generation Rule (BẤT BIẾN)
 **Flashcard chỉ được sinh từ graph entities/relations đã được người dùng xác nhận hoặc đã hoàn thành processing.**
@@ -211,6 +233,27 @@ graph TB
 
 ### BR-010: Error Recovery Rule (BẤT BIẾN)
 **Mọi background task thất bại PHẢI được retry tối đa 3 lần với exponential backoff. Sau 3 lần vẫn fail → lưu error message và notify user.**
+
+### BR-011: Document Upload Validation (CỐ ĐỊNH)
+**Document upload PHẢI validate trước khi xử lý (file size, type, text layer).**
+
+### BR-012: Rate Limiting & Quota (CỐ ĐỊNH)
+**API calls PHẢI được giới hạn để tránh lạm dụng. MVP: per-user limits. Post-MVP: per subscription tier.**
+
+### BR-013: Knowledge Graph Versioning (KHUYẾN NGHỊ — Post-MVP)
+**Mỗi lần document mới được thêm vào graph, PHẢI lưu version snapshot để rollback. Post-MVP.**
+
+### BR-014: Chat Session Context (KHUYẾN NGHỊ)
+**Chat session PHẢI giữ context từ document hiện tại. Nếu user hỏi ngoài document, mở rộng retrieval.**
+
+### BR-015: Flashcard Quality Threshold (KHUYẾN NGHỊ)
+**Flashcard auto-generated PHẢI đạt chất lượng tối thiểu: confidence >= 0.7, description >= 20 chars.**
+
+### BR-016: System Resilience (BẤT BIẾN)
+**Hệ thống PHẢI phản ứng graceful khi hạ tầng gặp sự cố. Không crash, không treo user vô hạn.**
+
+### BR-017: Request Idempotency (CỐ ĐỊNH)
+**Mọi mutation request (POST/PUT/DELETE) PHẢI có cơ chế chống trùng lặp.**
 
 ---
 
@@ -262,20 +305,39 @@ graph LR
 | **DEP-003** | Chat Module CÓ THỂ hoạt động độc lập nếu không có document (general chat) |
 | **DEP-004** | LLM Service là dependency của GẦN NHƯ mọi module — cần health check trước khi xử lý |
 | **DEP-005** | Background Worker là async — API trả về 202 Accepted ngay, client polling status |
+| **DEP-006** | Auth Middleware (MC-012) chạy TRƯỚC mọi endpoint — inject user_id vào request context |
+| **DEP-007** | Parent Orchestrator (MC-011) route request tới Agent — health check LLM trước khi route |
 
 ---
 
 ## 5. User Roles & Permissions (MVP)
 
 > [!NOTE]
-> MVP là single-user local nên chưa có phân quyền phức tạp. Bảng này cho Post-MVP reference.
+> MVP là single-user local nên chưa có phân quyền phức tạp. Bảng này mô tả **giới hạn quyền thực tế** dựa trên Actor State.
+
+### 5.1 MVP — Owner (Default User)
+
+| Tính năng | New User | Active User | Processing User | Rate Limited | Degraded Mode |
+|---|---|---|---|---|---|
+| Upload document | ✅ | ✅ | ❌ (1 lúc) | ❌ | ✅ |
+| General Chat | ✅ | ✅ | ✅ | ✅ | ❌ (LLM down) |
+| Graph-aware Chat | ❌ | ✅ | ✅ (doc cũ) | ✅ | ❌ (LLM down) |
+| View Graph | ❌ | ✅ | ✅ (doc cũ) | ✅ | ✅ |
+| Generate Flashcards | ❌ | ✅ | ✅ (doc cũ) | ❌ | ❌ (LLM down) |
+| Review Flashcards | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Generate Quiz | ❌ | ✅ | ✅ (doc cũ) | ❌ | ❌ (LLM down) |
+| Create/Edit Notes | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Delete Document | ❌ | ✅ | ✅ | ❌ | ✅ |
+| Merge Entities | ❌ | ✅ | ✅ | ❌ | ✅ |
+| Switch LLM Mode | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+### 5.2 Post-MVP Reference
 
 | Role | Permissions | Scope |
 |---|---|---|
-| **Owner (MVP)** | Full access: Upload, Chat, Graph, Flashcards, Quiz, Notes, Settings | Single user |
-| **User (Post-MVP)** | Upload, Chat, Graph, Flashcards, Quiz, Notes | Own data only |
-| **Admin (Post-MVP)** | User management, System monitoring, Model configuration | System-wide |
-| **Enterprise (Post-MVP)** | Team management, Shared knowledge graphs, Usage analytics | Team scope |
+| **User** | Upload, Chat, Graph, Flashcards, Quiz, Notes | Own data only |
+| **Admin** | User management, System monitoring, Model configuration | System-wide |
+| **Enterprise** | Team management, Shared knowledge graphs, Usage analytics | Team scope |
 
 ---
 

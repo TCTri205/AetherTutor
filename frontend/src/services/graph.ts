@@ -90,4 +90,89 @@ export const graphService = {
     });
     return response.data;
   },
+
+  // =========================================================================
+  // Stage 3: Interactive Graph Editing — CRUD API
+  // =========================================================================
+
+  /**
+   * Create a new entity.
+   */
+  async createEntity(data: {
+    canonical_name: string;
+    entity_type: string;
+    description?: string;
+    confidence?: number;
+    source?: string;
+    tags?: string[];
+    metadata?: Record<string, unknown>;
+  }): Promise<any> {
+    const response = await api.post('/graph/entities', data);
+    return response.data;
+  },
+
+  /**
+   * Update an entity with optimistic concurrency.
+   */
+  async updateEntity(
+    entityId: string,
+    data: {
+      expected_version: number;
+      canonical_name?: string;
+      entity_type?: string;
+      description?: string;
+      source?: string;
+      tags?: string[];
+      metadata?: Record<string, unknown>;
+    }
+  ): Promise<any> {
+    const response = await api.put(`/graph/entities/${entityId}`, data);
+    return response.data;
+  },
+
+  /**
+   * Delete an entity.
+   */
+  async deleteEntity(entityId: string, expectedVersion: number): Promise<void> {
+    await api.delete(`/graph/entities/${entityId}`, {
+      params: { expected_version: expectedVersion },
+    });
+  },
+
+  /**
+   * Create a new relation.
+   */
+  async createRelation(data: {
+    source_entity_id: string;
+    target_entity_id: string;
+    relation_type: string;
+    description?: string;
+    source?: string;
+  }): Promise<any> {
+    const response = await api.post('/graph/relations', data);
+    return response.data;
+  },
+
+  /**
+   * Delete a relation.
+   */
+  async deleteRelation(relationId: string, expectedVersion: number): Promise<void> {
+    await api.delete(`/graph/relations/${relationId}`, {
+      params: { expected_version: expectedVersion },
+    });
+  },
+
+  /**
+   * Generate Mermaid diagram.
+   */
+  async generateMermaid(params: {
+    document_id?: string;
+    topic?: string;
+    max_nodes?: number;
+    max_depth?: number;
+    format?: string;
+  }): Promise<{ mermaid_code: string; metadata: any }> {
+    const response = await api.post('/graph/mermaid', params);
+    return response.data;
+  },
 };

@@ -421,7 +421,7 @@ sequenceDiagram
 **Trigger:** User tạo ghi chú mới
 **Actor:** User (Owner)
 **Preconditions:**
-- Người dùng đã có ít nhất 1 document hoặc note trước đó
+- User ở trạng thái Active User (đã có ít nhất 1 document `completed`)
 
 ### Main Flow (Happy Path)
 
@@ -678,6 +678,363 @@ sequenceDiagram
 | **UF-007** | Switch Local/Cloud Mode | Settings, LLM | BR-008 | 🟢 Thấp |
 | **UF-008** | Dashboard — Morning Routine | Dashboard | BR-001 | 🟢 Thấp |
 | **UF-009** | Obsidian Graph Integration | Graph, Worker | BR-008, BR-009 | 🟡 Trung bình |
+| **UF-010** | Delete Document (Cascade Cleanup) | Document, Graph, Flashcard, Quiz, Note | BR-001, BR-016, BR-017 | 🔴 Cao |
+| **UF-011** | Edit/Update Note (Recalculate Backlinks) | Note, Graph | BR-009, BR-001 | 🟡 Trung bình |
+| **UF-012** | Merge Entities | Graph, LLM | BR-001, BR-017 | 🟡 Trung bình |
+| **UF-013** | Error Recovery (User Perspective) | Document, Worker | BR-002, BR-010, BR-016 | 🟡 Trung bình |
+
+---
+
+## UF-010: Delete Document (Cascade Cleanup)
+
+**Trigger:** User nhấn nút "Delete" trên document
+**Actor:** Active User hoặc Processing User (cho document cũ)
+**Preconditions:**
+- Document tồn tại và thuộc về user
+- User không ở trạng thái Rate Limited
+
+### Main Flow (Happy Path)
+
+| Step | Action | System Response | Data Flow |
+|---|---|---|---|
+| 1 | User click "Delete" trên document | Mở confirmation modal | — |
+| 2 | User xác nhận "Delete" | Frontend gửi request | `DELETE /api/v1/documents/{doc_id}` |
+| 3 | Backend nhận request | Validate: document tồn tại, thuộc user | — |
+| 4 | Xóa flashcards liên quan | `DELETE FROM flashcards WHERE source_doc = doc_id` | PostgreSQL |
+| 5 | Xóa quizzes liên quan | `DELETE FROM quizzes WHERE document_id = doc_id` | PostgreSQL |
+| 6 | Xóa notes liên quan | `DELETE FROM note_links WHERE source_doc = doc_id`<br/>`DELETE FROM notes WHERE source_doc = doc_id` (nếu có) | PostgreSQL |
+| 7 | Xóa embeddings | ChromaDB: `delete(where={"document_id": doc_id})` | ChromaDB |
+| 8 | Xóa graph entities/edges | `DELETE FROM graph_entities WHERE document_id = doc_id`<br/>`DELETE FROM graph_relations WHERE document_id = doc_id` | PostgreSQL |
+| 9 | Rebuild NetworkX graph | Load lại graph từ SQL (nguồn sự thật) | NetworkX |
+| 10 | Xóa document record | `DELETE FROM documents WHERE id = doc_id` | PostgreSQL |
+| 11 | Xóa document chunks | `DELETE FROM document_chunks WHERE document_id = doc_id` | PostgreSQL |
+| 12 | Trả về kết quả | Frontend đóng modal, refresh danh sách | Response: `{deleted_entities, deleted_relations, deleted_embeddings}` |
+
+### Alternative Flows
+
+| Flow | Điều kiện | Handling |
+|---|---|---|
+| **A1: PostgreSQL down** | Step 4-12 fail | Trả về `503`: "Database không khả dụng. Thử lại sau." Không xóa gì cả (atomic) |
+| **A2: ChromaDB down** | Step 7 fail | Log error, tiếp tục xóa SQL. Notify user: "Embeddings chưa xóa được, sẽ cleanup sau." |
+| **A3: Document đang processing** | Step 3 | Cancel background task trước → tiếp tục cleanup → xóa record |
+| **A4: Document đã xóa** | Step 3 | Idempotent: trả về `200: "Already deleted"` (BR-017) |
+
+### Postconditions
+- **Success:** Document và TẤT CẢ dữ liệu liên quan (flashcards, quizzes, embeddings, entities, relations, chunks) bị xóa khỏi mọi storage layer
+- **Partial failure:** Nếu ChromaDB fail, SQL vẫn xóa → orphan embeddings. Background job cleanup sẽ xử lý sau.
+- **Data consistency:** Không thể rollback sau khi xóa (hard delete)
+
+### Business Rules áp dụng
+- [BR-001](Business_Rules.md#br-001-user-data-isolation) 🔴 — Chỉ xóa document của user
+- [BR-016](Business_Rules.md#br-016-system-resilience) 🔴 — Xử lý graceful khi DB down
+- [BR-017](Business_Rules.md#br-017-request-idempotency) 🟡 — Idempotent delete
+
+### Mermaid Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant CD as ChromaDB
+    participant NX as NetworkX
+
+    U->>FE: Click "Delete Document"
+    FE->>U: Show confirmation modal
+    U->>FE: Confirm "Delete"
+    FE->>API: DELETE /api/v1/documents/{doc_id}
+
+    API->>PG: Validate: doc exists, belongs to user
+    alt Document not found
+        PG-->>API: Not found
+        API-->>FE: 200 "Already deleted" (idempotent)
+        FE->>U: Toast: "Document đã được xóa trước đó"
+    else Document exists
+        API->>PG: DELETE flashcards (WHERE source_doc = doc_id)
+        API->>PG: DELETE quizzes (WHERE document_id = doc_id)
+        API->>PG: DELETE note_links + notes (WHERE source_doc = doc_id)
+        API->>CD: DELETE embeddings (WHERE document_id = doc_id)
+        alt ChromaDB down
+            CD-->>API: Error
+            API->>API: Log error, schedule cleanup job
+        else ChromaDB success
+            CD-->>API: Deleted
+        end
+
+        API->>PG: DELETE graph_entities, graph_relations
+        API->>PG: DELETE document_chunks
+        API->>NX: Rebuild graph from SQL
+        API->>PG: DELETE documents (WHERE id = doc_id)
+
+        API-->>FE: 200 OK {deleted_entities: 45, deleted_relations: 89, deleted_embeddings: 120}
+        FE->>U: Toast: "Document deleted successfully"
+        FE->>U: Remove document from list
+    end
+```
+
+---
+
+## UF-011: Edit/Update Note (Recalculate Backlinks)
+
+**Trigger:** User chỉnh sửa nội dung note đã lưu
+**Actor:** Active User
+**Preconditions:**
+- Note tồn tại và thuộc về user
+- Ít nhất 1 document đã `completed` (để có entities so khớp)
+
+### Main Flow (Happy Path)
+
+| Step | Action | System Response | Data Flow |
+|---|---|---|---|
+| 1 | User mở note đã lưu | Load note content + backlinks hiện tại | `GET /api/v1/notes/{note_id}` |
+| 2 | User chỉnh sửa content | — | — |
+| 3 | User nhấn "Save" | Frontend gửi request | `PUT /api/v1/notes/{note_id}` |
+| 4 | Backend update note | Update title, content, updated_at | PostgreSQL |
+| 5 | Quét lại content tìm entities mới | So khớp với entities trong graph | Content → Graph search |
+| 6 | So sánh backlinks cũ vs mới | Tìm backlinks mới, backlinks đã mất | — |
+| 7 | Thêm backlinks mới | `INSERT INTO note_links` (ignore duplicate) | PostgreSQL |
+| 8 | Xóa backlinks không còn khớp | `DELETE FROM note_links WHERE note_id = X AND entity NOT IN (new_entities)` | PostgreSQL |
+| 9 | Trả về note đã update | Frontend hiển thị với backlinks mới | Note + updated backlinks → FE |
+
+### Alternative Flows
+
+| Flow | Điều kiện | Handling |
+|---|---|---|
+| **A1: Content không còn entities nào** | Step 5 | Xóa TẤT CẢ backlinks cũ của note này |
+| **A2: PostgreSQL down** | Step 4 fail | Trả về `503`, không update gì cả |
+| **A3: Note không tồn tại** | Step 3 | Trả về `404: "Note not found"` |
+
+### Postconditions
+- Note được update với nội dung mới
+- Backlinks được đồng bộ: thêm mới, xóa cũ
+- `updated_at` timestamp được cập nhật
+
+### Business Rules áp dụng
+- [BR-009](Business_Rules.md#br-009-note-backlink-rule) 🔴 — Recalculate backlinks
+- [BR-001](Business_Rules.md#br-001-user-data-isolation) 🔴 — Chỉ update note của user
+
+### Mermaid Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant Graph as Knowledge Graph
+
+    U->>FE: Open existing note
+    FE->>API: GET /api/v1/notes/{note_id}
+    API-->>FE: Note + current backlinks
+    FE->>U: Display note editor
+
+    U->>FE: Edit content, add "Neural Networks"
+    U->>FE: Click "Save"
+    FE->>API: PUT /api/v1/notes/{note_id} {title, content}
+
+    API->>PG: UPDATE notes SET content = ..., updated_at = NOW()
+    API->>Graph: Scan content for entity matches
+    Graph-->>API: Found: "Neural Networks", "Backpropagation"
+
+    API->>PG: Compare old vs backlinks
+    Note over API,PG: Old: [Backpropagation]<br/>New: [Backpropagation, Neural Networks]<br/>→ Add: Neural Networks
+
+    API->>PG: INSERT note_links (Neural Networks) — ignore duplicate
+    API->>PG: DELETE note_links no longer matching
+
+    API-->>FE: 200 OK {note, backlinks: [...]}
+    FE->>U: Display updated note with new backlink: "Neural Networks Intro"
+```
+
+---
+
+## UF-012: Merge Entities
+
+**Trigger:** User chọn gộp 2 entities trùng lặp hoặc liên quan chặt chẽ
+**Actor:** Active User
+**Preconditions:**
+- Cả 2 entities tồn tại trong graph
+- Entities thuộc về user
+
+### Main Flow (Happy Path)
+
+| Step | Action | System Response | Data Flow |
+|---|---|---|---|
+| 1 | User chọn 2 entities trên graph view | Mở merge dialog | — |
+| 2 | User chọn entity "giữ lại" (primary) và entity "gộp vào" (secondary) | — | {primary_id, secondary_id} |
+| 3 | User nhấn "Merge" | Frontend gửi request | `POST /api/v1/graph/entities/merge` |
+| 4 | Backend validate | Kiểm tra cả 2 entities tồn tại, không cùng ID | — |
+| 5 | Merge relations | Chuyển TẤT CẢ relations của secondary sang primary | Graph → PostgreSQL |
+| 6 | Resolve description conflict | Áp dụng strategy (xem bảng dưới) | — |
+| 7 | Xóa secondary entity | `DELETE FROM graph_entities WHERE id = secondary_id` | PostgreSQL |
+| 8 | Update primary entity | Merge description (nếu cần), cập nhật updated_at | PostgreSQL |
+| 9 | Rebuild NetworkX graph | Load lại graph từ SQL | NetworkX |
+| 10 | Trả về kết quả | Primary entity info + số relations đã merge | Response → FE |
+
+### Description Conflict Resolution
+
+| Trường hợp | Strategy |
+|---|---|
+| **Primary có description, Secondary không** | Giữ description của Primary |
+| **Cả hai đều có description khác nhau** | Gọi LLM: *"Merge these two descriptions into one comprehensive summary"* |
+| **Cả hai description giống nhau > 90%** | Giữ description của Primary, không cần AI |
+| **LLM down khi merge** | Fallback: Concatenate cả 2 description, thêm prefix `"[Merged] "` |
+
+### Alternative Flows
+
+| Flow | Điều kiện | Handling |
+|---|---|---|
+| **A1: Secondary đã bị merge trước đó** | Step 4 | Idempotent: trả về primary info (200 OK) — BR-017 |
+| **A2: PostgreSQL down** | Step 5 fail | Trả về `503`, không merge gì cả |
+| **A3: Relations trùng lặp** | Step 5 | Nếu cùng source + target + type → bỏ qua (UNIQUE constraint) |
+
+### Postconditions
+- Secondary entity bị xóa
+- Primary entity giữ lại, có thêm relations từ secondary
+- Graph được rebuild từ SQL
+- Không thể rollback (hard delete secondary)
+
+### Business Rules áp dụng
+- [BR-001](Business_Rules.md#br-001-user-data-isolation) 🔴 — Chỉ merge entities của user
+- [BR-017](Business_Rules.md#br-017-request-idempotency) 🟡 — Idempotent merge
+
+### Mermaid Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend (React Flow)
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant LLM as LLM Service
+    participant NX as NetworkX
+
+    U->>FE: Select 2 entities on graph
+    FE->>U: Show merge dialog
+    U->>FE: Choose Primary + Secondary
+    U->>FE: Click "Merge"
+    FE->>API: POST /api/v1/graph/entities/merge<br/>{primary_id, secondary_id}
+
+    API->>PG: Validate: both entities exist
+    alt Secondary already merged
+        API-->>FE: 200 OK (idempotent)
+        FE->>U: Toast: "Entities already merged"
+    else Both exist
+        API->>PG: Transfer relations from Secondary to Primary
+        PG-->>API: 3 relations transferred
+
+        API->>API: Resolve description conflict
+        alt Both have different descriptions
+            API->>LLM: Merge descriptions task
+            LLM-->>API: Combined description
+        else LLM down
+            API->>API: Fallback: concatenate
+        end
+
+        API->>PG: DELETE secondary entity
+        API->>PG: UPDATE primary entity (merged description)
+        API->>NX: Rebuild graph from SQL
+
+        API-->>FE: 200 OK {primary_id, transferred_relations: 3}
+        FE->>U: Toast: "Entities merged successfully"
+        FE->>U: Update graph: remove secondary node, update primary
+    end
+```
+
+---
+
+## UF-013: Error Recovery (User Perspective)
+
+**Trigger:** User thấy document ở trạng thái `failed`
+**Actor:** Active User hoặc Processing User
+**Preconditions:**
+- Document tồn tại với status = `failed`
+
+### Main Flow (Happy Path)
+
+| Step | Action | System Response | Data Flow |
+|---|---|---|---|
+| 1 | User thấy document với badge "❌ Failed" | — | — |
+| 2 | User click vào document | Hiển thị error details | `GET /api/v1/documents/{doc_id}` |
+| 3 | User đọc error message | `error_message` hiển thị rõ ràng + gợi ý | — |
+| 4 | User click "Retry Processing" | Frontend gửi request | `POST /api/v1/documents/{doc_id}/retry` |
+| 5 | Backend reset status | Update status = `pending`, clear error_message | PostgreSQL |
+| 6 | Queue lại task | Gửi vào ARQ queue | Redis → Worker |
+| 7 | Worker xử lý | Repeat pipeline từ step 1 (UF-001) | — |
+| 8 | User thấy status thay đổi | Polling hoặc notification | `GET /api/v1/documents/{doc_id}/status` |
+
+### Alternative Flows
+
+| Flow | Điều kiện | Handling |
+|---|---|---|
+| **A1: Lỗi không sửa được** (vd: PDF không có text layer) | Step 3 | Hiển thị: "Lỗi không thể sửa bằng retry. Vui lòng upload file khác." |
+| **A2: User nhấn "Delete" thay vì "Retry"** | Step 3 | Chuyển sang UF-010 (Delete Document) |
+| **A3: Retry cũng fail** | Step 8 | Hiển thị error mới + suggestion cụ thể hơn (vd: "LLM timeout — thử Local Mode") |
+| **A4: Worker down** | Step 6 fail | Trả về `503`: "Task queue unavailable. Thử lại sau." |
+
+### Error Message Guide
+
+| Error Pattern | User Message | Suggested Action |
+|---|---|---|
+| `LLM timeout` | "AI không phản hồi trong thời gian cho phép." | "Thử lại hoặc chuyển sang Local Mode (Settings)" |
+| `No text layer` | "Không đọc được text từ PDF. File có thể là ảnh scan." | "Upload file PDF có text layer hoặc dùng OCR tool trước" |
+| `No entities extracted` | "Không tìm thấy thực thể nào trong tài liệu." | "Kiểm tra tài liệu có nội dung text. Thử file khác nếu cần." |
+| `ChromaDB connection error` | "Không lưu được embeddings. Hệ thống vector DB đang sự cố." | "Thử lại sau. Nếu vẫn lỗi, liên hệ support." |
+| `Worker crash` | "Tiến trình xử lý bị gián đoạn." | "Nhấn Retry để chạy lại từ đầu." |
+
+### Postconditions
+- **Success:** Document chuyển sang `completed` sau retry
+- **Failure:** Document vẫn `failed` với error message mới
+- **Delete:** Document bị xóa nếu user chọn không retry
+
+### Business Rules áp dụng
+- [BR-002](Business_Rules.md#br-002-document-processing-pipeline) 🔴 — Retry pipeline
+- [BR-010](Business_Rules.md#br-010-error-recovery-rule) 🔴 — Retry 3 lần
+- [BR-016](Business_Rules.md#br-016-system-resilience) 🔴 — Graceful error handling
+
+### Mermaid Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FE as Frontend
+    participant API as FastAPI
+    participant PG as PostgreSQL
+    participant W as Worker (ARQ)
+
+    U->>FE: Open Document Library
+    FE->>U: Show document list with "❌ Failed" badge
+    U->>FE: Click failed document
+    FE->>API: GET /api/v1/documents/{doc_id}
+    API-->>FE: {status: "failed", error_message: "LLM timeout"}
+
+    FE->>U: Show error details + suggested action
+    Note over FE,U: "AI không phản hồi trong thời gian cho phép.<br/>Thử lại hoặc chuyển sang Local Mode (Settings)"
+
+    alt User clicks "Retry"
+        U->>FE: Click "Retry Processing"
+        FE->>API: POST /api/v1/documents/{doc_id}/retry
+        API->>PG: UPDATE status = "pending", error_message = NULL
+        API->>W: Queue document processing task
+        W-->>API: Task queued
+        API-->>FE: 200 OK {message: "Retrying..."}
+        FE->>U: Show "🔄 Retrying..." badge
+
+        W->>PG: UPDATE status = "processing"
+        W->>W: Process document (UF-001)
+        alt Success
+            W->>PG: UPDATE status = "completed"
+            FE->>U: Show "✅ Completed"
+        else Fail again
+            W->>PG: UPDATE status = "failed", error_message = "LLM timeout (retry 1/3)"
+            FE->>U: Show "❌ Failed" with new error message
+        end
+    else User clicks "Delete"
+        U->>FE: Click "Delete"
+        Note over U,FE: Proceed to UF-010: Delete Document
+    end
+```
 
 ---
 
@@ -710,8 +1067,9 @@ sequenceDiagram
 | **A2: Xung đột thực thể** | Step 6 | Nếu không chắc chắn, tạo thành thực thể mới và gợi ý gộp sau |
 
 ### Business Rules áp dụng
-- [BR-008](Business_Rules.md#br-008-local-mode-rule) 🔴 — No cloud data
-- [BR-009](Business_Rules.md#br-009-note-backlink-rule) 🔴 — Backlink generation
+- [BR-001](Business_Rules.md#br-001-user-data-isolation) 🔴 — User data isolation cho imported entities
+- [BR-002](Business_Rules.md#br-002-document-processing-pipeline) 🟡 — Processing pipeline (tương tự document)
+- [BR-017](Business_Rules.md#br-017-request-idempotency) 🟡 — Idempotent import (cùng vault path không duplicate)
 
 ---
 

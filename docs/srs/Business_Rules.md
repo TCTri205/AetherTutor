@@ -422,16 +422,21 @@ THEN:
 
 ## BR-012: Rate Limiting & Quota 🟡
 
-**Mô tả:** API calls PHẢI được giới hạn theo subscription tier.
+**Mô tả:** API calls PHẢI được giới hạn để tránh lạm dụng và kiểm soát chi phí LLM.
 
 **MVP Limits (single-user):**
-| Endpoint | Limit | Window |
-|---|---|---|
-| Document upload | 5 per day | 24h rolling |
-| Chat requests | 10 per minute | 60s sliding |
-| Graph queries | 30 per minute | 60s sliding |
-| Flashcard generation | 10 per day | 24h rolling |
-| Quiz generation | 5 per day | 24h rolling |
+| Endpoint | Limit | Window | Action khi vượt |
+|---|---|---|---|
+| Document upload | 5 per day | 24h rolling | Trả về `429`: "Vượt giới hạn upload trong ngày" |
+| Chat requests | 10 per minute | 60s sliding | Trả về `429`: "Quá nhiều request. Đợi 1 phút" |
+| Graph queries | 30 per minute | 60s sliding | Trả về `429`: "Graph query limit reached" |
+| Flashcard generation | 10 per day | 24h rolling | Trả về `429`: "Vượt giới hạn tạo flashcard" |
+| Quiz generation | 5 per day | 24h rolling | Trả về `429`: "Vượt giới hạn tạo quiz" |
+
+**Post-MVP (multi-user):**
+- Giới hạn theo subscription tier (Free, Pro, Enterprise)
+- Rate limit per user, không phải per IP
+- Token usage tracking cho billing
 
 **Violation Impact:** 🟡 **API abuse** hoặc **cost overrun**
 
@@ -512,6 +517,82 @@ THEN:
 
 ---
 
+## BR-016: System Resilience 🔴
+
+**Mô tả:** Hệ thống PHẢI phản ứng graceful khi hạ tầng gặp sự cố. Không được crash hoặc để user treo vô hạn.
+
+**Infrastructure Failure Response:**
+
+| Failure Scenario | Detection | System Response | User Experience |
+|---|---|---|---|
+| **PostgreSQL down** | Health check fail (connection refused) | Mọi API trả về `503 Service Unavailable`. Frontend hiển thị maintenance page. | "⚠️ Database không khả dụng. Đang thử kết nối lại..." |
+| **Redis down** | ARQ worker không queue được task | API upload trả về `503: "Task queue unavailable"`. Không tạo document pending. | "⚠️ Hệ thống đang bận. Thử lại sau ít phút." |
+| **ChromaDB down** | Health check fail (HTTP error) | Document fail ở step 7 (vector_storage). Retry 3 lần theo BR-010. Nếu vẫn fail → `failed` status. | Toast: "⚠️ Lưu embedding thất bại. Document không khả dụng." |
+| **LLM timeout/unavailable** | Health check fail hoặc request timeout (> 30s) | Chuyển sang Degraded Mode. Các tính năng cần LLM trả về `503`. Chat: inline error. | "⚠️ AI hiện không phản hồi. Kiểm tra Settings hoặc thử lại sau." |
+| **NetworkX graph corrupt** | Graph load fail hoặc node count = 0 (trong khi DB có entities) | Rebuild graph từ SQL (source of truth). Nếu rebuild fail → mark graph as "rebuilding". | "🔄 Đang xây dựng lại graph. Vui lòng đợi..." |
+| **Worker crash** | Process exit, task stuck | ARQ auto-restart worker. Task được retry từ checkpoint gần nhất (dựa vào retry policy của từng task type). | User không thấy gì — retry trong background |
+
+**Recovery Rules:**
+```
+IF infrastructure component recovers
+THEN:
+    - Health check pass → remove Degraded Mode flag
+    - Queued tasks resume processing
+    - User sees "✅ Hệ thống đã hoạt động trở lại"
+```
+
+**Atomic Pipeline Rule:**
+```
+IF bất kỳ storage layer nào (PostgreSQL, ChromaDB, NetworkX) fail trong quá trình processing
+THEN:
+    - Document status = "failed"
+    - KHÔNG hiển thị document cho user như "completed"
+    - Cleanup partial data (embeddings đã lưu, entities đã lưu — xóa theo cascade)
+    - User chỉ thấy document hoàn chỉnh khi CẢ 3 storage layers thành công
+```
+
+**Violation Impact:** 🔴 **User experience destroyed** — Treo, crash, data corrupt
+
+---
+
+## BR-017: Request Idempotency 🟡
+
+**Mô tả:** Mọi mutation request (POST/PUT/DELETE) PHẢI có cơ chế chống trùng lặp.
+
+**Idempotency Rules:**
+
+| Request Type | Mechanism | Scope |
+|---|---|---|
+| **Document Upload** | File hash check (SHA-256). Nếu cùng hash + cùng user → trả về document_id cũ (409 Conflict) | Per-user |
+| **Flashcard Generation** | Check: đã tồn tại flashcard cho `{document_id}` chưa. Nếu có → trả về danh sách cũ (không tạo mới) | Per document |
+| **Quiz Generation** | Client gửi `idempotency_key` (UUID). Backend check key trong Redis (TTL 1h). Nếu tồn tại → trả về kết quả cũ | Per request |
+| **Note Creation** | Không cần idempotency — user được phép tạo nhiều note cùng nội dung | N/A |
+| **Merge Entities** | Check: secondary entity đã được merge vào primary chưa. Nếu rồi → trả về primary info (200 OK) | Per entity pair |
+| **Delete Document** | Idempotent: nếu document đã xóa → trả về `200: "Already deleted"` (không phải 404) | Per document |
+| **Review Flashcard** | Check: đã review trong cùng giây chưa. Nếu rồi → bỏ qua (200 OK, trả về result cũ) | Per flashcard + timestamp |
+
+**Idempotency Key Header (cho Quiz):**
+```
+POST /api/v1/quiz/generate
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Duplicate Response:**
+```typescript
+interface DuplicateResponse {
+  success: false;
+  error: {
+    code: 'DUPLICATE_REQUEST';
+    message: string;
+    existing_resource_id?: string;  // ID của resource đã tồn tại
+  };
+}
+```
+
+**Violation Impact:** 🟡 **Duplicate data** hoặc **wasted LLM cost**
+
+---
+
 ## Business Rules Checklist (Cho Code Review)
 
 Trước khi merge code, check list sau:
@@ -526,6 +607,8 @@ Trước khi merge code, check list sau:
 - [ ] **BR-008:** Local Mode không gọi Cloud API?
 - [ ] **BR-009:** Note mới có backlink suggestion?
 - [ ] **BR-010:** Retry logic đúng 3 lần + backoff?
+- [ ] **BR-016:** System failure được xử lý graceful (không crash)?
+- [ ] **BR-017:** Mutation request có idempotency mechanism?
 
 ---
 

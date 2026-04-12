@@ -1307,10 +1307,178 @@ interface DashboardResponse {
 
 ---
 
+## MC-011: Parent Orchestrator
+
+### Responsibility
+- Route request của user tới đúng Agent (Socratic Tutor, Researcher, Visualizer, Examiner)
+- Quản lý context document khi chat graph-aware
+- Xử lý fallback khi Agent không khả dụng
+
+**KHÔNG làm:**
+- ❌ Không sinh nội dung response (việc của Agent + LLM)
+- ❌ Không trực tiếp query graph (gọi Graph Module)
+
+### Dependencies
+
+| Dependency | Type | Bắt buộc? | Mục đích |
+|---|---|---|---|
+| Graph Module | Internal | ✅ | Lấy context cho graph-aware chat |
+| LLM Service | Internal | ✅ | Health check trước khi route |
+| All Agents | Internal | ✅ | Delegate work |
+| PostgreSQL | Infrastructure | ✅ | Lưu session metadata |
+
+### Routing Table (MVP)
+
+| Agent | Trigger Condition | API Endpoint |
+|---|---|---|
+| **Socratic Tutor** | Default chat mode (`agent_mode = 'socratic'`) | `POST /api/v1/chat/socratic` |
+| **Researcher** | User yêu cầu "tìm hiểu sâu", multi-hop query | `POST /api/v1/chat/researcher` (Post-MVP) |
+| **Visualizer** | User yêu cầu "vẽ graph", "hiển thị" | `POST /api/v1/graph/subgraph` → Frontend render |
+| **Examiner** | User yêu cầu "kiểm tra", "quiz" | `POST /api/v1/quiz/generate` |
+
+> [!NOTE]
+> MVP chỉ implement **Socratic Tutor** Agent. Các Agent khác là Post-MVP.
+
+### Public Interface (Internal Service Methods)
+
+```python
+class ParentOrchestrator:
+    async def route_chat(
+        self,
+        message: str,
+        session_id: Optional[str],
+        document_id: Optional[str],
+        agent_mode: str = 'socratic',
+    ) -> ChatResponse:
+        """
+        Route chat request to appropriate agent.
+        MVP: Always routes to Socratic Tutor Agent.
+        """
+        # Step 1: Health check LLM
+        if not await self.llm_service.health_check():
+            raise LLMUnavailableError("LLM service unavailable")
+
+        # Step 2: Get graph context if document provided
+        context = None
+        if document_id:
+            context = await self.graph_module.query_context(
+                query=message,
+                document_ids=[document_id],
+            )
+
+        # Step 3: Route to agent
+        if agent_mode == 'socratic':
+            return await self.socratic_tutor.generate(
+                message=message,
+                session_id=session_id,
+                context=context,
+            )
+        else:
+            raise ValueError(f"Unknown agent_mode: {agent_mode}")
+```
+
+### Error Contract
+
+| Error Type | Condition | Handling |
+|---|---|---|
+| `LLMUnavailableError` | LLM down | Trả về `503: "AI không phản hồi"` |
+| `AgentNotFoundError` | Agent mode không tồn tại | Trả về `400: "Invalid agent mode"` |
+| `ContextError` | Document không có graph | Fallback sang general chat (không context) |
+
+---
+
+## MC-012: Auth & Identity Middleware
+
+### Responsibility
+- Inject `user_id` vào mọi request context
+- Validate session/token (MVP: mock auth)
+- Đảm bảo BR-001 (User Data Isolation) ở tầng API
+
+**KHÔNG làm:**
+- ❌ Không xác thực OAuth/SSO (Post-MVP)
+- ❌ Không phân quyền RBAC (MVP: single user)
+
+### Dependencies
+
+| Dependency | Type | Bắt buộc? | Mục đích |
+|---|---|---|---|
+| AppConfig | Internal | ✅ | Lấy `DEFAULT_USER_ID` |
+| Redis | Infrastructure | ✅ (Post-MVP) | Session storage (token blacklist) |
+
+### MVP — Mock Auth
+
+Trong MVP, authentication được giả lập. Mọi request đều được gán `DEFAULT_USER_ID`.
+
+```python
+DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000000")
+
+@asynccontextmanager
+async def get_current_user(request: Request) -> AsyncGenerator[UserIdentity, None]:
+    """
+    MVP: Mock auth — luôn trả về DEFAULT_USER_ID.
+    Post-MVP: Parse JWT token, validate expiry, check blacklist.
+    """
+    yield UserIdentity(
+        user_id=DEFAULT_USER_ID,
+        role="owner",
+        is_authenticated=True,
+    )
+```
+
+### UserIdentity Contract
+
+```typescript
+interface UserIdentity {
+  user_id: string;               // UUID — BẮT BUỘC cho mọi query
+  role: 'owner' | 'user' | 'admin';  // MVP: luôn 'owner'
+  is_authenticated: boolean;     // MVP: luôn true
+}
+```
+
+### Middleware Injection Rule
+
+```
+MỌI API endpoint (trừ /health) PHẢI:
+    1. Gọi get_current_user() để lấy user_id
+    2. Truyền user_id vào mọi service call
+    3. Service call PHẢI dùng user_id làm filter (BR-001)
+
+PSEUDOCODE:
+    @router.get("/documents")
+    async def list_documents(user = Depends(get_current_user)):
+        return await document_service.list(user_id=user.user_id)
+```
+
+### Post-MVP — Real Auth
+
+| Component | Implementation |
+|---|---|
+| Token format | JWT (RS256) |
+| Token source | `Authorization: Bearer <token>` header |
+| Validation | Parse JWT, verify signature, check `exp` claim |
+| Session storage | Redis (token blacklist for logout) |
+| Password hashing | bcrypt (argon2id preferred) |
+| OAuth providers | Google, GitHub (optional) |
+
+### Error Contract
+
+| HTTP Code | Error Code | Condition | Message |
+|---|---|---|---|
+| 401 | `UNAUTHORIZED` | Không có token (Post-MVP) | "Authentication required" |
+| 401 | `INVALID_TOKEN` | Token malformed/expired (Post-MVP) | "Invalid or expired token" |
+| 403 | `FORBIDDEN` | Không đủ quyền (Post-MVP) | "Insufficient permissions" |
+
+---
+
 ## Module Dependency Graph
 
 ```mermaid
 graph TB
+    subgraph "Middleware"
+        AUTH[MC-012: Auth & Identity]
+        ORCH[MC-011: Orchestrator]
+    end
+
     subgraph "External Facing"
         DOC[MC-001: Document]
         GRAPH[MC-002: Graph]
@@ -1353,6 +1521,17 @@ graph TB
 
     WORKER --> LLM
     WORKER --> GRAPH
+
+    AUTH --> DOC
+    AUTH --> GRAPH
+    AUTH --> CHAT
+    AUTH --> FLASH
+    AUTH --> QUIZ
+    AUTH --> NOTE
+    AUTH --> DASH
+
+    ORCH --> CHAT
+    CHAT --> ORCH
 ```
 
 ---

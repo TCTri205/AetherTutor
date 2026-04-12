@@ -6,6 +6,7 @@ import { User, Bot, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import MermaidDiagram from './MermaidDiagram';
 
 interface ChatMessageProps {
   role: 'user' | 'assistant';
@@ -88,6 +89,15 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
               components={{
                 p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
                 code: ({ node, inline, className, children, ...props }: any) => {
+                  const match = /language-(\w+)/.exec(className || '');
+                  const language = match ? match[1] : '';
+
+                  // Detect mermaid code blocks
+                  if (language === 'mermaid' && !inline) {
+                    const mermaidCode = String(children).replace(/\n$/, '');
+                    return <MermaidDiagram code={mermaidCode} />;
+                  }
+
                   return (
                     <code className={cn(className, inline ? "bg-white/5 px-1.5 py-0.5 rounded text-primary" : "")} {...props}>
                       {children}

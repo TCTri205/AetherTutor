@@ -1,5 +1,7 @@
 import uuid
 from typing import Optional
+from datetime import datetime
+import sqlalchemy as sa
 from sqlalchemy import (
     String, Text, Integer, Float, ForeignKey, UniqueConstraint, Index, Boolean
 )
@@ -45,10 +47,14 @@ class GraphEntity(Base, TimestampMixin):
     file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, server_default="{}")
 
+    # Optimistic Concurrency Control
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
     __table_args__ = (
         UniqueConstraint("document_id", "canonical_name"),
         Index("idx_graph_entities_user_id", "user_id"),
         Index("idx_graph_entities_tags", "tags", postgresql_using="gin"),
+        Index("idx_graph_entities_version", "version"),
     )
 
 
@@ -58,6 +64,9 @@ class GraphRelation(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     source_entity_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -79,11 +88,16 @@ class GraphRelation(Base, TimestampMixin):
     is_backlink: Mapped[bool] = mapped_column(Boolean, default=False)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, server_default="{}")
 
+    # Optimistic Concurrency Control
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
     __table_args__ = (
         UniqueConstraint(
             "document_id", "source_entity_id", "target_entity_id", "relation_type",
             name="uq_graph_relations_doc_source_target_type"
         ),
+        Index("idx_graph_relations_user_id", "user_id"),
+        Index("idx_graph_relations_version", "version"),
     )
 
     # Relationships
@@ -116,3 +130,38 @@ class EntityAlias(Base, TimestampMixin):
 
     # Relationships
     user = relationship("User", back_populates="entity_aliases")
+
+
+class GraphEditLog(Base):
+    """
+    Audit log for graph edits (create/update/delete operations).
+    Provides traceability and debugging for graph modifications.
+    """
+    __tablename__ = "graph_edit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    document_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=True
+    )
+    entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_entities.id", ondelete="SET NULL"), nullable=True
+    )
+    relation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_relations.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[str] = mapped_column(String(20), nullable=False)  # CREATE, UPDATE, DELETE
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)  # entity, relation
+    old_value: Mapped[Optional[dict]] = mapped_column("old_value", JSONB, nullable=True)
+    new_value: Mapped[Optional[dict]] = mapped_column("new_value", JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=sa.func.current_timestamp(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_graph_edit_log_user_id", "user_id"),
+        Index("idx_graph_edit_log_document_id", "document_id"),
+        Index("idx_graph_edit_log_created_at", "created_at"),
+    )

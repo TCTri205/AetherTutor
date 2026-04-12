@@ -18,6 +18,7 @@ import {
   FolderOpen,
   Users,
   Layers,
+  GitGraph,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -26,6 +27,7 @@ import GraphView, { type GraphViewRef } from '../components/graph/GraphView';
 import GraphSearchBar from '../components/graph/GraphSearchBar';
 import AliasManager from '../components/graph/AliasManager';
 import MultiDocQuery from '../components/graph/MultiDocQuery';
+import MermaidDiagram from '../components/shared/MermaidDiagram';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -38,6 +40,12 @@ export default function GraphExplorer() {
   const [graphData, setGraphData] = useState<{ nodes: any[]; links: any[] }>({ nodes: [], links: [] });
   const [isLoading, setIsLoading] = useState(false);
   const [hasData, setHasData] = useState(false);
+
+  // Diagram view state
+  const [activeTab, setActiveTab] = useState<'graph' | 'diagram'>('graph');
+  const [mermaidCode, setMermaidCode] = useState<string>('');
+  const [mermaidMetadata, setMermaidMetadata] = useState<any>(null);
+  const [isGeneratingDiagram, setIsGeneratingDiagram] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -239,6 +247,59 @@ export default function GraphExplorer() {
     }
   }, [graphData, documentId]);
 
+  // Generate Mermaid diagram
+  const generateMermaidDiagram = useCallback(async (format: string = 'mindmap') => {
+    if (graphData.nodes.length === 0) {
+      toast.error('Không có dữ liệu để tạo diagram');
+      return;
+    }
+
+    setIsGeneratingDiagram(true);
+    try {
+      // Convert graphData to format for API
+      const nodes = graphData.nodes.map((n: any) => ({
+        id: n.id,
+        name: n.label || n.name || n.id,
+        type: n.type || n.entity_type || 'concept',
+        description: n.description || '',
+        confidence: n.confidence || 0.5,
+      }));
+
+      const edges = graphData.links.map((l: any) => ({
+        source: typeof l.source === 'object' ? l.source.id : l.source,
+        target: typeof l.target === 'object' ? l.target.id : l.target,
+        label: l.label || l.relation_type || '',
+        description: l.description || '',
+      }));
+
+      // Call API
+      const response = await fetch('/api/v1/graph/mermaid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_id: documentId,
+          max_nodes: 100,
+          max_depth: 3,
+          format,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API call failed');
+      }
+
+      const data = await response.json();
+      setMermaidCode(data.mermaid_code);
+      setMermaidMetadata(data.metadata);
+      setActiveTab('diagram');
+      toast.success('Diagram tạo thành công!');
+    } catch (err: any) {
+      toast.error(`Lỗi tạo diagram: ${err.message}`);
+    } finally {
+      setIsGeneratingDiagram(false);
+    }
+  }, [graphData, documentId]);
+
   return (
     <div className="flex h-full overflow-hidden bg-[#020617] rounded-3xl border border-white/5 relative">
       <div className="flex-1 relative">
@@ -376,15 +437,106 @@ export default function GraphExplorer() {
 
         {/* Graph Component */}
         {hasData ? (
-          <GraphView
-            ref={graphViewRef}
-            data={graphData}
-            onNodeClick={handleNodeClick}
-            isLoading={isLoading}
-            searchQuery={searchQuery}
-            selectedTag={selectedTag}
-            showObsidianBadges={true}
-          />
+          <div className="relative h-full">
+            {/* Tab Switcher */}
+            <div className="absolute top-4 right-6 z-10 flex gap-2">
+              <Button
+                variant={activeTab === 'graph' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveTab('graph')}
+                className={cn(
+                  "gap-2 transition-all",
+                  activeTab === 'graph'
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                )}
+              >
+                <Network className="w-4 h-4" />
+                Graph View
+              </Button>
+              <Button
+                variant={activeTab === 'diagram' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setActiveTab('diagram')}
+                className={cn(
+                  "gap-2 transition-all",
+                  activeTab === 'diagram'
+                    ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+                    : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                )}
+              >
+                <GitGraph className="w-4 h-4" />
+                Diagram
+              </Button>
+              {activeTab === 'diagram' && !mermaidCode && (
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateMermaidDiagram('mindmap')}
+                    disabled={isGeneratingDiagram}
+                    className="bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                  >
+                    {isGeneratingDiagram ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Mindmap'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateMermaidDiagram('flowchart_td')}
+                    disabled={isGeneratingDiagram}
+                    className="bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                  >
+                    Flowchart TD
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => generateMermaidDiagram('flowchart_lr')}
+                    disabled={isGeneratingDiagram}
+                    className="bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+                  >
+                    Flowchart LR
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Graph View */}
+            {activeTab === 'graph' && (
+              <GraphView
+                ref={graphViewRef}
+                data={graphData}
+                onNodeClick={handleNodeClick}
+                isLoading={isLoading}
+                searchQuery={searchQuery}
+                selectedTag={selectedTag}
+                showObsidianBadges={true}
+              />
+            )}
+
+            {/* Diagram View */}
+            {activeTab === 'diagram' && (
+              <div className="h-full overflow-auto p-6 bg-[#020617]">
+                {mermaidCode ? (
+                  <MermaidDiagram
+                    code={mermaidCode}
+                    metadata={mermaidMetadata}
+                    className="max-w-4xl mx-auto"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-center px-8">
+                    <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
+                      <GitGraph className="w-10 h-10 text-muted-foreground/40" />
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">Chưa có Diagram</h3>
+                    <p className="text-muted-foreground text-sm max-w-md mb-6">
+                      Chọn định dạng sơ đồ bên trên để tạo Mermaid diagram từ Knowledge Graph.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ) : !isLoading ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <div className="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
