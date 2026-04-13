@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from fastapi import Header, HTTPException, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from app.services.security import decode_token

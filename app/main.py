@@ -1,8 +1,8 @@
-from fastapi import FastAPI, Depends, Request, APIRouter
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .config import settings
-from .api import documents, chat, graph, flashcards, quiz, notes, auth, users, topics, agents, collaboration, push
+from .api import documents, chat, graph, flashcards, quiz, notes, auth, users, topics, agents, collaboration, push, media
 from .api.limiter import limiter
 from .worker.queue import get_redis_pool
 from contextlib import asynccontextmanager
@@ -170,6 +170,7 @@ app.include_router(topics.router, prefix="/api/v1")
 app.include_router(agents.router, prefix="/api/v1")
 app.include_router(collaboration.router, prefix="/api/v1")
 app.include_router(push.router, prefix="/api/v1")
+app.include_router(media.router, prefix="/api/v1")
 
 # WebSocket router (no /api/v1 prefix for WebSocket)
 app.include_router(ws_router)

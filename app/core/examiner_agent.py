@@ -8,15 +8,11 @@ then prompts LLM to generate quiz questions following Bloom's Taxonomy.
 import uuid
 import json
 import logging
-import random
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 from app.services.llm_service import llm_service
 from app.constants import (
     MAX_QUIZ_QUESTIONS,
-    QUIZ_DIFFICULTY_SCALE_MIN,
-    QUIZ_DIFFICULTY_SCALE_MAX,
 )
 
 logger = logging.getLogger(__name__)

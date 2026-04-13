@@ -1,23 +1,27 @@
-import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate, lazy, Suspense } from 'react-router-dom';
 import RootLayout from './layouts/RootLayout';
 import Dashboard from './pages/Dashboard';
 import Vault from './pages/Vault';
 import Chat from './pages/Chat';
-import GraphExplorer from './pages/GraphExplorer';
-import GlobalGraphExplorer from './pages/GlobalGraphExplorer';
-import Flashcards from './pages/Flashcards';
-import Quiz from './pages/Quiz';
-import Zettelkasten from './pages/Zettelkasten';
-import TeamSettings from './pages/TeamSettings';
-import LanguageChat from './pages/LanguageChat';
-import MathChat from './pages/MathChat';
+import MediaViewer from './pages/MediaViewer';
 import { OfflinePage } from './pages/OfflinePage';
 import DocumentGuard from './components/shared/DocumentGuard';
 import { ErrorBoundary } from './components/shared/ErrorBoundary';
 import { FallbackError } from './components/shared/FallbackError';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { InstallPrompt } from './components/shared/InstallPrompt';
+import LoadingSkeleton from './components/shared/LoadingSkeleton';
 import './styles/tokens.css';
+
+// Lazy load heavy pages (code splitting)
+const GraphExplorer = lazy(() => import('./pages/GraphExplorer'));
+const GlobalGraphExplorer = lazy(() => import('./pages/GlobalGraphExplorer'));
+const Flashcards = lazy(() => import('./pages/Flashcards'));
+const Quiz = lazy(() => import('./pages/Quiz'));
+const Zettelkasten = lazy(() => import('./pages/Zettelkasten'));
+const TeamSettings = lazy(() => import('./pages/TeamSettings'));
+const LanguageChat = lazy(() => import('./pages/LanguageChat'));
+const MathChat = lazy(() => import('./pages/MathChat'));
 
 // Error page component for route-level errors
 const ErrorPage = ({ error }: { error?: any }) => (
@@ -58,7 +62,9 @@ const router = createBrowserRouter([
         path: 'graph/:documentId?',
         element: (
           <ErrorBoundary>
-            <DocumentGuard><GraphExplorer /></DocumentGuard>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <DocumentGuard><GraphExplorer /></DocumentGuard>
+            </Suspense>
           </ErrorBoundary>
         ),
         errorElement: <ErrorPage />,
@@ -67,29 +73,55 @@ const router = createBrowserRouter([
         path: 'global-graph',
         element: (
           <ErrorBoundary>
-            <GlobalGraphExplorer />
+            <Suspense fallback={<LoadingSkeleton />}>
+              <GlobalGraphExplorer />
+            </Suspense>
           </ErrorBoundary>
         ),
         errorElement: <ErrorPage />,
       },
       {
         path: 'flashcards',
-        element: <Flashcards />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <Flashcards />
+            </Suspense>
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
       {
         path: 'quiz',
-        element: <Quiz />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <Quiz />
+            </Suspense>
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
       {
         path: 'notes',
-        element: <Zettelkasten />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <Zettelkasten />
+            </Suspense>
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
       {
         path: 'team/:teamId',
-        element: <TeamSettings />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <TeamSettings />
+            </Suspense>
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
       {
@@ -98,12 +130,33 @@ const router = createBrowserRouter([
       },
       {
         path: 'language-chat',
-        element: <LanguageChat />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <LanguageChat />
+            </Suspense>
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
       {
         path: 'math-chat',
-        element: <MathChat />,
+        element: (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton />}>
+              <MathChat />
+            </Suspense>
+          </ErrorBoundary>
+        ),
+        errorElement: <ErrorPage />,
+      },
+      {
+        path: 'media/:documentId',
+        element: (
+          <ErrorBoundary>
+            <MediaViewer />
+          </ErrorBoundary>
+        ),
         errorElement: <ErrorPage />,
       },
     ],

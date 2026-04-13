@@ -4,8 +4,7 @@ QuizAnalysisService - Analyze quiz results and generate study recommendations.
 
 import uuid
 import logging
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from typing import List, Dict, Any
 
 from app.repositories.quiz_repo import QuizResultRepository
 from app.services.llm_service import llm_service

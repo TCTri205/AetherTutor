@@ -16,7 +16,6 @@ Extracts:
 import ast
 import logging
 from pathlib import Path
-from typing import Any
 
 from app.schemas.lightrag import ExtractedEntity, EntityRelation, ExtractionResult
 

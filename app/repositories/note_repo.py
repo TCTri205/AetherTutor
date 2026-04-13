@@ -3,10 +3,9 @@ Note & NoteLink repositories for Stage 2 - Zettelkasten & Bi-directional Linking
 """
 
 import uuid
-from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc, and_, or_
+from sqlalchemy import select, func, desc, or_
 from sqlalchemy.orm import selectinload
 
 from app.models.note import Note, NoteLink

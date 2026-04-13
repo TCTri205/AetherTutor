@@ -5,7 +5,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { User, Bot, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import MermaidDiagram from './MermaidDiagram';
 
@@ -16,7 +16,8 @@ interface ChatMessageProps {
   isStreaming?: boolean;
 }
 
-export default function ChatMessage({ role, content, reasoning, isStreaming }: ChatMessageProps) {
+// Memoize to prevent re-rendering entire message list on every streaming chunk
+const ChatMessage = memo(function ChatMessage({ role, content, reasoning, isStreaming }: ChatMessageProps) {
   const [showReasoning, setShowReasoning] = useState(true);
   const isUser = role === 'user';
 
@@ -117,4 +118,6 @@ export default function ChatMessage({ role, content, reasoning, isStreaming }: C
       </div>
     </div>
   );
-}
+});
+
+export default ChatMessage;

@@ -6,8 +6,9 @@ from sqlalchemy import select, func
 from arq.cron import CronJob
 
 from ..database import async_session_factory
-from ..models.document import DocumentStatus, ProcessingStep
+from ..models.document import DocumentStatus, ProcessingStep, Document
 from ..models.user import User
+from ..models.transcript import Transcript
 from ..repositories.document_repo import DocumentRepository
 from ..repositories.chunk_repo import ChunkRepository
 from ..repositories.graph_repo import GraphRepository
@@ -19,6 +20,7 @@ from ..services.pdf_extractor import pdf_extractor
 from ..services.code_parser import code_parser, CodeParserError, CODE_EXTENSIONS
 from ..services.llm_service import llm_service
 from ..services.notification_service import get_notification_service
+from ..services.transcription_service import transcription_service
 from ..config import settings
 from ..core.entity_extractor import EntityExtractor
 
@@ -430,6 +432,89 @@ async def import_obsidian_vault_task(ctx: Any, vault_path: str, user_id_str: str
             }))
             raise e
 
+
+async def transcribe_media_task(ctx: Any, document_id_str: str, user_id_str: str, language: str = "en"):
+    """
+    ARQ Job: Transcribe media document (audio/video) using Whisper.
+
+    Args:
+        document_id_str: UUID của document cần transcribe
+        user_id_str: UUID của user (cho RLS context)
+        language: Ngôn ngữ target (e.g., 'en', 'vi')
+    """
+    document_id = uuid.UUID(document_id_str)
+    user_id = uuid.UUID(user_id_str)
+
+    async with async_session_factory() as session:
+        # Set RLS context
+        from app.database import set_current_user_id
+        await set_current_user_id(session, user_id_str)
+
+        # Get transcript record
+        from sqlalchemy import select
+        stmt = select(Transcript).where(
+            Transcript.document_id == document_id,
+            Transcript.user_id == user_id,
+        )
+        result = await session.execute(stmt)
+        transcript = result.scalars().first()
+
+        if not transcript:
+            logger.error(f"Transcript not found for document {document_id}")
+            return
+
+        # Update status to processing
+        transcript.status = "processing"
+        await session.commit()
+
+        try:
+            # Get file path from document
+            doc_stmt = select(Document).where(Document.id == document_id)
+            doc_result = await session.execute(doc_stmt)
+            doc = doc_result.scalars().first()
+
+            if not doc or not doc.file_path:
+                raise PermanentProcessingError("Document không có file_path")
+
+            file_path = Path(doc.file_path)
+
+            # Transcribe
+            transcription_result = await transcription_service.transcribe(
+                file_path=file_path,
+                language=language,
+            )
+
+            if not transcription_result:
+                raise PermanentProcessingError("Transcription failed - no result")
+
+            # Update transcript
+            transcript.full_text = transcription_result.full_text
+            transcript.language = transcription_result.language
+            transcript.duration = transcription_result.duration
+            transcript.segments = [
+                {"text": seg.text, "start": seg.start, "end": seg.end}
+                for seg in transcription_result.segments
+            ]
+            transcript.status = "completed"
+            transcript.error_message = None
+            await session.commit()
+
+            logger.info(f"Transcription completed for document {document_id}")
+
+        except PermanentProcessingError as e:
+            logger.error(f"Permanent transcription error: {e.message}")
+            transcript.status = "failed"
+            transcript.error_message = e.message
+            await session.commit()
+
+        except Exception as e:
+            logger.exception(f"Transcription failed for document {document_id}: {e}")
+            transcript.status = "failed"
+            transcript.error_message = str(e)
+            await session.commit()
+            raise e
+
+
 # Cấu hình ARQ Worker
 
 class WorkerSettings:
@@ -439,6 +524,7 @@ class WorkerSettings:
         sm2_daily_digest_task,
         quiz_feedback_analysis_task,
         import_obsidian_vault_task,
+        transcribe_media_task,
     ]
     cron_jobs = [
         CronJob(

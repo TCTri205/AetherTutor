@@ -11,11 +11,11 @@ Uses similarity matching + LLM verification + user confirmation.
 
 import uuid
 import logging
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
 from difflib import SequenceMatcher
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from app.models.graph import GraphEntity, EntityAlias
 from app.services.llm_service import llm_service
 from app.constants import ENTITY_ALIAS_SIMILARITY_THRESHOLD

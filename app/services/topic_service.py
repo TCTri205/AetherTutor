@@ -84,7 +84,7 @@ class TopicService:
                 await self.session.refresh(updated)
             logger.info(f"Topic updated: {topic_id}")
             return updated
-        except ValueError as e:
+        except ValueError:
             await self.session.rollback()
             raise
 

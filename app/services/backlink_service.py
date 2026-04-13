@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from ..models.graph import GraphRelation, GraphEntity
+from ..models.graph import GraphRelation
 from ..repositories.graph_repo import GraphRepository
 
 logger = logging.getLogger(__name__)

@@ -1,5 +1,5 @@
 import '../styles/tokens.css';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -21,7 +21,8 @@ interface ConversationListProps {
   onNewConversation: () => void;
 }
 
-export default function ConversationList({
+// Memoize to prevent re-rendering on every parent state change
+const ConversationList = memo(function ConversationList({
   documentId,
   activeConversationId,
   onSelectConversation,
@@ -200,4 +201,6 @@ export default function ConversationList({
       )}
     </div>
   );
-}
+});
+
+export default ConversationList;

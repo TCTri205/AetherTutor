@@ -6,7 +6,6 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Request, status
-from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, get_current_user_id

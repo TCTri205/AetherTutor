@@ -4,7 +4,6 @@ FlashcardRepository providing data access for Flashcard model.
 from typing import List, Optional
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 import uuid
 from datetime import datetime
 

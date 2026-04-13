@@ -6,7 +6,6 @@ from ..services.chroma_client import chroma_client
 from ..services.embedding_service import embedding_service
 from ..repositories.graph_repo import GraphRepository
 from ..services.llm_service import llm_service
-from ..config import settings
 from ..constants import RETRIEVAL_TOP_K_CHUNKS, RETRIEVAL_TOP_K_ENTITIES
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.schemas.auth import PASSWORD_POLICY_MSG, _validate_password
+from app.schemas.auth import _validate_password
 
 
 # --- Request Schemas ---

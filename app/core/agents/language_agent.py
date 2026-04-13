@@ -9,7 +9,7 @@ Capabilities:
 - Grammar checking
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from pydantic import BaseModel
 
 from .base_agent import BaseAgent, AgentCapabilities

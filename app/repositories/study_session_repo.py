@@ -4,7 +4,6 @@ StudySessionRepository providing data access for StudySession model.
 from typing import List, Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 import uuid
 from datetime import datetime, timedelta
 

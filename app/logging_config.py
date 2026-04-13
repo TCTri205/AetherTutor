@@ -3,7 +3,6 @@ Logging configuration with structured logging and correlation IDs.
 Uses contextvars for thread-safe/async-safe per-request correlation tracking.
 """
 import logging
-import uuid
 import json
 from contextvars import ContextVar
 from typing import Any, Dict, Optional

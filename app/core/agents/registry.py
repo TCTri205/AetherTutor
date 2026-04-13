@@ -8,7 +8,7 @@ Provides:
 - Version compatibility checking
 """
 
-from typing import Dict, Optional, List, Type
+from typing import Dict, Optional, List
 import logging
 from .base_agent import BaseAgent
 

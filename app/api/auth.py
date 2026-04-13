@@ -7,7 +7,6 @@ Supports both JWT Bearer and X-User-Id header during transition.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, status
 from loguru import logger
@@ -45,7 +44,7 @@ from app.schemas.auth_extended import (
     EmailVerificationResponse,
 )
 from app.services.auth_service import AuthService
-from app.services.security import decode_token, hash_password
+from app.services.security import hash_password
 from app.services.email_service import (
     generate_verification_token,
     generate_password_reset_token,

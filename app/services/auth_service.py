@@ -13,8 +13,6 @@ from typing import Any
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
-from app.models.user_session import UserSession
 from app.repositories.user import UserRepository
 from app.repositories.session import UserSessionRepository
 from app.services.security import (

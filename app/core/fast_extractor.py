@@ -5,7 +5,6 @@ Dùng để extract entities NHANH (không cần LLM).
 import spacy
 import threading
 import logging
-from typing import List
 from ..schemas.lightrag import ExtractedEntity, ExtractionResult
 
 logger = logging.getLogger(__name__)

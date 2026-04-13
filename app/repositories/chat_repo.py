@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional, List
-from sqlalchemy import select, func, delete, update
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.conversation import Conversation, Message, MessageStatus
 from .base import BaseRepository

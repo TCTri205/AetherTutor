@@ -65,6 +65,9 @@ class Document(Base, TimestampMixin):
     entity_links = relationship(
         "EntityDocument", back_populates="document", cascade="all, delete-orphan"
     )
+    transcripts = relationship(
+        "Transcript", back_populates="document", cascade="all, delete-orphan"
+    )
 
     def __repr__(self):
         return f"<Document(id={self.id}, filename={self.filename}, status={self.status})>"

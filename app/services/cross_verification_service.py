@@ -7,13 +7,11 @@ This service analyzes information from multiple documents to:
 3. Generate consolidated context with source attribution per claim
 """
 
-import uuid
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
 from app.services.llm_service import llm_service
-from app.constants import CROSS_VERIFICATION_CONTRADICTION_THRESHOLD
 
 logger = logging.getLogger(__name__)
 

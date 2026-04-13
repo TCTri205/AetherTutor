@@ -18,7 +18,6 @@ Endpoints:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -33,7 +32,6 @@ from app.models.shared_resource import SharedResource, SharedResourceType, Share
 from app.models.user import User
 from app.services.email_service import (
     generate_verification_token,
-    send_verification_email,
 )
 from app.config import settings
 

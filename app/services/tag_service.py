@@ -1,9 +1,9 @@
 import uuid
 import logging
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy as sa
-from sqlalchemy import select, func, distinct, text
+from sqlalchemy import select
 from ..models.graph import GraphEntity
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,6 @@ class TagService:
         """
         Search for entities that have a specific tag.
         """
-        from sqlalchemy import text
         # Using any() for PostgreSQL array matching
         stmt = (
             select(GraphEntity)

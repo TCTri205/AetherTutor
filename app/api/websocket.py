@@ -6,13 +6,10 @@ Supports JWT authentication via query parameter.
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import WebSocket, WebSocketDisconnect, Query, Depends, HTTPException
+from fastapi import WebSocket, Query, HTTPException
 from loguru import logger
 
 from app.services.security import decode_token

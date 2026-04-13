@@ -5,7 +5,7 @@ Note: Community sharing feature reserved for future release.
 Current implementation supports local export/import only.
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -177,7 +177,6 @@ async def export_agent_template(agent_id: str):
         )
     
     import uuid
-    from datetime import datetime
     
     template = AgentTemplate(
         template_id=f"template_{uuid.uuid4().hex[:8]}",

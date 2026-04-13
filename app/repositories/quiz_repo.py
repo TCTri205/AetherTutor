@@ -3,7 +3,6 @@ Quiz repositories for Stage 2 - Examiner & Quiz System
 """
 
 import uuid
-from datetime import datetime
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, desc

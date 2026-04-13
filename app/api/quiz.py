@@ -31,7 +31,6 @@ from app.repositories.graph_repo import GraphRepository
 from app.repositories.document_repo import DocumentRepository
 from app.core.examiner_agent import examiner_agent
 from app.core.graph_builder import GraphBuilder
-from app.services.quiz_analysis_service import QuizAnalysisService
 from app.schemas.quiz import (
     QuizGenerateRequest,
     QuizSubmitRequest,
