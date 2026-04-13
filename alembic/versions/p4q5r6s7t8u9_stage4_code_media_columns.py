@@ -7,8 +7,6 @@ Create Date: 2026-04-12
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = 'p4q5r6s7t8u9'
@@ -30,18 +28,28 @@ def upgrade() -> None:
         "ALTER TABLE graph_entities ADD COLUMN IF NOT EXISTS display_name VARCHAR(255)"
     )
 
+    # Create media_type enum for documents (Sprint 17: Media Microlearning)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE mediatype AS ENUM ('text', 'video', 'audio');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+
     # Add media_type and source_url to documents
     op.execute(
-        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS media_type VARCHAR(20) DEFAULT 'text'"
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS media_type mediatype DEFAULT 'text'"
     )
     op.execute(
-        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url VARCHAR(512)"
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_url VARCHAR(1024)"
     )
 
 
 def downgrade() -> None:
     op.drop_column("documents", "source_url")
     op.drop_column("documents", "media_type")
+    op.execute("DROP TYPE IF EXISTS mediatype")
     op.drop_column("graph_entities", "display_name")
     op.drop_column("graph_entities", "file_size")
     op.drop_column("graph_entities", "code_snippet")
