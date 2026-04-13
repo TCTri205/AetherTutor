@@ -21,6 +21,12 @@ class ProcessingStep(str, enum.Enum):
     EMBEDDING = "EMBEDDING"              # Lưu vào Vector DB
     COMPLETED = "COMPLETED"              # Hoàn thành
 
+class MediaType(str, enum.Enum):
+    """Document media type — Sprint 17: Media Microlearning."""
+    TEXT = "text"           # PDF, TXT, source code
+    VIDEO = "video"         # YouTube video
+    AUDIO = "audio"         # MP3, WAV, etc.
+
 class Document(Base, TimestampMixin):
     __tablename__ = "documents"
 
@@ -38,6 +44,11 @@ class Document(Base, TimestampMixin):
     )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Sprint 17: Media Microlearning
+    media_type: Mapped[MediaType] = mapped_column(
+        Enum(MediaType), default=MediaType.TEXT, nullable=False, server_default="text"
+    )
+    source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="documents")

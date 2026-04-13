@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Any
 from sqlalchemy import select, func
+from arq.cron import CronJob
 
 from ..database import async_session_factory
 from ..models.document import DocumentStatus, ProcessingStep
@@ -28,6 +29,59 @@ from .queue import redis_settings, get_redis_pool
 from ..constants import WORKER_JOB_TIMEOUT_SECONDS, WORKER_MAX_RETRIES, REDIS_DISTRIBUTED_LOCK_TTL, QUIZ_FEEDBACK_FLAG_THRESHOLD
 
 logger = logging.getLogger(__name__)
+
+# =============================================
+# P2-1: Cleanup helper function (refactored from inline code)
+# =============================================
+
+async def cleanup_partial_document_data(
+    doc_id: uuid.UUID,
+    graph_repo,
+    chunk_repo,
+    session,
+    user_id: uuid.UUID | None = None,
+) -> None:
+    """
+    P2-1: Xóa sạch dấu vết của document trong PostgreSQL và ChromaDB.
+    Dùng cho idempotency sweep trước khi xử lý lại document.
+
+    Args:
+        doc_id: Document UUID
+        graph_repo: GraphRepository instance
+        chunk_repo: ChunkRepository instance
+        session: AsyncSession để commit
+        user_id: User UUID cho RLS context (optional)
+
+    Raises:
+        Exception: Nếu ChromaDB cleanup fail (để caller có thể handle)
+    """
+    from app.database import set_current_user_id
+
+    logger.info(f"Running idempotency sweep for document {doc_id}")
+
+    # Set RLS context if user_id is provided
+    if user_id:
+        await set_current_user_id(session, str(user_id))
+
+    # Bước 1: Xóa graph và chunks trong PostgreSQL
+    await graph_repo.delete_by_document_id(doc_id)
+    await chunk_repo.delete_by_document_id(doc_id)
+
+    # Bước 2: Xóa embeddings trong ChromaDB
+    # Nếu fail, raise exception để caller biết (không silent như trước)
+    try:
+        chroma_client.delete_by_document_id(doc_id)
+    except Exception as e:
+        logger.error(f"ChromaDB cleanup failed for document {doc_id}: {e}")
+        # Rollback session on ChromaDB failure to avoid half-committed state
+        await session.rollback()
+        raise
+
+    # Bước 3: Commit PostgreSQL changes
+    await session.commit()
+
+    logger.info(f"Idempotency sweep completed for document {doc_id}")
+
 
 # =============================================
 # Cron Dispatcher Task
@@ -121,12 +175,8 @@ async def process_document_task(ctx: Any, doc_id_str: str):
         pipeline = LightRAGPipeline(doc_repo, chunk_repo, graph_repo, extractor, retriever, user_id=doc.user_id)
 
         try:
-            # Bước 0: Idempotency Sweep - Xóa sạch dấu vết cũ nếu đây là chạy lại
-            logger.info(f"Đang dọn dẹp dữ liệu cũ cho tài liệu: {doc.filename} ({doc_id})")
-            await graph_repo.delete_by_document_id(doc_id)
-            await chunk_repo.delete_by_document_id(doc_id)
-            chroma_client.delete_by_document_id(doc_id)
-            await session.commit()
+            # Bước 0: Idempotency Sweep - Dùng helper function (P2-1 refactored)
+            await cleanup_partial_document_data(doc_id, graph_repo, chunk_repo, session, user_id=doc.user_id)
 
             # Bước 1: Extract text from file
             if not doc.file_path:
@@ -218,6 +268,10 @@ async def sm2_daily_digest_task(ctx: Any, user_id_str: str):
             return
 
         async with async_session_factory() as session:
+            # Set RLS context for background task
+            from app.database import set_current_user_id
+            await set_current_user_id(session, user_id_str)
+
             flashcard_repo = FlashcardRepository(session)
             session_repo = StudySessionRepository(session)
 
@@ -377,7 +431,6 @@ async def import_obsidian_vault_task(ctx: Any, vault_path: str, user_id_str: str
             raise e
 
 # Cấu hình ARQ Worker
-from arq.cron import CronJob
 
 class WorkerSettings:
     functions = [

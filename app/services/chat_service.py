@@ -2,6 +2,7 @@ import uuid
 import json
 import asyncio
 import logging
+from datetime import datetime
 from typing import AsyncGenerator, List, Optional, Dict, Any
 from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import update
@@ -111,6 +112,8 @@ class ChatService:
     ) -> AsyncGenerator[str, None]:
         """
         Core streaming logic — called within a dedicated session context.
+        
+        BR-006: Track attempt_count và pedagogical state trong conversation metadata.
         """
         # 0. Context Validation: Ensure conversation belongs to the document
         conv = await chat_repo.get_conversation(conversation_id)
@@ -118,8 +121,14 @@ class ChatService:
             logger.error(f"Context mismatch: conv {conversation_id} does not belong to doc {document_id}")
             raise HTTPException(status_code=400, detail="Conversation/Document mismatch or not found")
 
+        # BR-006: Load pedagogical state từ metadata
+        conv_metadata = conv.metadata_ or {}
+        attempt_count = conv_metadata.get("attempt_count", 0)
+        hint_level = conv_metadata.get("hint_level", 1)
+        last_topics = conv_metadata.get("last_topics", [])
+
         # 1. Commit 1: Save User Message
-        user_msg = await chat_repo.add_message(
+        await chat_repo.add_message(
             conversation_id=conversation_id,
             role="user",
             content=user_query
@@ -133,8 +142,51 @@ class ChatService:
         context, found_entities = await retriever.retrieve(user_query, str(document_id), user_id=self.user_id)
         context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 
-        # 4. Construct Prompt
-        messages = self._construct_tutor_prompt(mode, context_str, history, user_query)
+        # BR-006: Phân tích user query để detect topic và update attempt_count
+        # Simple heuristic: nếu query chứa từ khóa giống topics cũ → increment attempt
+        query_lower = user_query.lower()
+        topic_match = any(topic.lower() in query_lower for topic in last_topics)
+        
+        if topic_match and mode == "socratic":
+            # User hỏi cùng topic → có thể đang struggling
+            attempt_count += 1
+            logger.info(f"Topic match detected, attempt_count incremented to {attempt_count}")
+            
+            # Nếu đã hỏi 3+ lần về cùng topic → tăng hint level
+            if attempt_count >= 3:
+                hint_level = min(hint_level + 1, 4)  # Max hint level = 4
+                logger.info(f"Hint level increased to {hint_level}")
+        else:
+            # Topic mới → reset counters
+            attempt_count = 0
+            hint_level = 1
+            logger.info("New topic detected, attempt_count reset to 0")
+
+        # Extract topics từ user query (simple: lấy 3-5 từ khóa đầu tiên)
+        new_topics = query_lower.split()[:5]
+        
+        # Update metadata với state mới
+        updated_metadata = {
+            "attempt_count": attempt_count,
+            "hint_level": hint_level,
+            "last_topics": new_topics,
+            "last_updated": datetime.utcnow().isoformat(),
+        }
+        
+        # Commit metadata update
+        await chat_repo.session.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(metadata_=updated_metadata)
+        )
+        await chat_repo.session.commit()
+
+        # 4. Construct Prompt (với hint_level và attempt_count)
+        messages = self._construct_tutor_prompt(
+            mode, context_str, history, user_query,
+            hint_level=hint_level,
+            attempt_count=attempt_count
+        )
 
         # 5. Commit 2: Create PENDING Assistant Message
         assistant_msg = await chat_repo.add_message(
@@ -156,8 +208,14 @@ class ChatService:
         )
         await chat_repo.session.commit()
 
-        # 6. Yield Meta Info
-        yield f"event: meta\ndata: {json.dumps({'message_id': str(assistant_msg.id), 'conversation_id': str(conversation_id)})}\n\n"
+        # 6. Yield Meta Info (bao gồm attempt_count và hint_level)
+        meta_data = json.dumps({
+            'message_id': str(assistant_msg.id),
+            'conversation_id': str(conversation_id),
+            'attempt_count': attempt_count,
+            'hint_level': hint_level,
+        })
+        yield f"event: meta\ndata: {meta_data}\n\n"
 
         full_content = ""
         try:
@@ -190,14 +248,24 @@ class ChatService:
 
         except (asyncio.CancelledError, GeneratorExit):
             logger.warning(f"Stream disconnected for message {assistant_msg.id}")
-            # Message đã được set FAILED mặc định ở bước 5b, chỉ cần re-raise
+            # Lưu partial content trước khi re-raise để không mất dữ liệu
+            if full_content:
+                try:
+                    await chat_repo.update_message(
+                        assistant_msg.id,
+                        content=full_content,
+                        status=MessageStatus.FAILED
+                    )
+                    await chat_repo.session.commit()
+                except Exception as save_err:
+                    logger.error(f"Failed to save partial content on disconnect: {save_err}")
             raise
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
             # Đảm bảo rollback transaction bị hỏng trước khi ghi nhận lỗi
             await chat_repo.session.rollback()
-            
+
             # Update với partial content nếu có lỗi bất ngờ
             try:
                 await chat_repo.update_message(
@@ -208,14 +276,43 @@ class ChatService:
                 await chat_repo.session.commit()
             except Exception as update_err:
                 logger.error(f"Không thể cập nhật trạng thái lỗi chat: {update_err}")
-            
+
             yield f"event: error\ndata: {json.dumps({'detail': str(e), 'code': 'STREAM_INTERRUPTED'})}\n\n"
 
         finally:
             if len(history) <= 1:
                 background_tasks.add_task(self.generate_conversation_title, conversation_id, user_query)
 
-    def _construct_tutor_prompt(self, mode: str, context: str, history: List[Any], query: str) -> List[Dict[str, str]]:
+    def _construct_tutor_prompt(
+        self, 
+        mode: str, 
+        context: str, 
+        history: List[Any], 
+        query: str,
+        hint_level: int = 1,
+        attempt_count: int = 0
+    ) -> List[Dict[str, str]]:
+        # BR-006: Thêm pedagogical state vào system prompt
+        pedagogical_instruction = ""
+        if mode == "socratic":
+            if attempt_count >= 3:
+                pedagogical_instruction = (
+                    f"\n\nPEDAGOGICAL STATE: Student has asked about this topic {attempt_count} times. "
+                    f"Hint level: {hint_level}/4. "
+                    f"You should provide MORE DIRECT guidance and consider explaining the concept clearly."
+                )
+            elif attempt_count >= 1:
+                pedagogical_instruction = (
+                    f"\n\nPEDAGOGICAL STATE: Student has asked {attempt_count} time(s) about related concepts. "
+                    f"Hint level: {hint_level}/4. "
+                    f"Continue asking guiding questions but consider providing more hints."
+                )
+            else:
+                pedagogical_instruction = (
+                    f"\n\nPEDAGOGICAL STATE: New conversation or new topic. "
+                    f"Start with open-ended Socratic questions. Hint level: {hint_level}/4."
+                )
+
         system_role = (
             "You are a Socratic tutor. You never give direct answers. Instead, you ask guiding questions "
             "to help the student find the answer themselves based on the provided context. "
@@ -235,11 +332,14 @@ class ChatService:
             "Supported formats: mindmap, graph TD, graph LR."
         )
 
-        prompt_messages = [{"role": "system", "content": system_role}]
-        
+        # Combine system role với pedagogical instruction
+        full_system_role = system_role + pedagogical_instruction
+
+        prompt_messages = [{"role": "system", "content": full_system_role}]
+
         # Add context as a system message
         prompt_messages.append({
-            "role": "system", 
+            "role": "system",
             "content": f"Knowledge Context for the tutoring session:\n{context}\n\nUse ONLY this context for information."
         })
 

@@ -16,7 +16,7 @@ from .entity_extractor import EntityExtractor
 from .retriever import Retriever
 from .graph_builder import get_graph_builder
 from ..constants import (
-    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE, ENTITY_EXTRACTION_BATCH_SIZE
+    CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_SIZE
 )
 
 logger = logging.getLogger(__name__)
@@ -117,19 +117,30 @@ class LightRAGPipeline(LightRAG):
             for i, chunk_text in enumerate(raw_chunks):
                 chunk_id = f"{doc_id}::chunk::{i}"
                 tokens = len(self.tokenizer.encode(chunk_text))
-                
+
                 chunks_to_db.append(DocumentChunk(
                     document_id=doc_id,
                     chunk_index=i,
                     content=chunk_text,
                     tokens=tokens
                 ))
-                
+
                 chroma_ids.append(chunk_id)
                 chroma_docs.append(chunk_text)
-                chunk_meta = {"document_id": str(doc_id), "chunk_index": i}
-                if user_id_str:
-                    chunk_meta["user_id"] = user_id_str
+                # BR-008: Bắt buộc có user_id trong metadata để multi-tenant isolation
+                if not user_id_str:
+                    logger.warning(f"user_id is missing for document {doc_id} - this is a security risk")
+                    chunk_meta = {
+                        "document_id": str(doc_id), 
+                        "chunk_index": i,
+                        "user_id": "anonymous",  # Fallback để vẫn có metadata
+                    }
+                else:
+                    chunk_meta = {
+                        "document_id": str(doc_id), 
+                        "chunk_index": i,
+                        "user_id": user_id_str,
+                    }
                 chroma_metas.append(chunk_meta)
 
             # Lưu Chunks vào SQL
@@ -211,9 +222,19 @@ class LightRAGPipeline(LightRAG):
             entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
             entity_chroma_metas = []
             for e in dedup_entities:
-                e_meta = {"document_id": str(doc_id), "entity_name": e.name}
-                if user_id_str:
-                    e_meta["user_id"] = user_id_str
+                # BR-008: Bắt buộc có user_id trong metadata
+                if not user_id_str:
+                    e_meta = {
+                        "document_id": str(doc_id), 
+                        "entity_name": e.name,
+                        "user_id": "anonymous",
+                    }
+                else:
+                    e_meta = {
+                        "document_id": str(doc_id), 
+                        "entity_name": e.name,
+                        "user_id": user_id_str,
+                    }
                 entity_chroma_metas.append(e_meta)
             
             if entity_chroma_ids:
@@ -279,8 +300,8 @@ class LightRAGPipeline(LightRAG):
             # Dọn dẹp ChromaDB phòng trường hợp lỗi giữa chừng để đảm bảo tính nhất quán
             try:
                 chroma_client.delete_by_document_id(doc_id)
-            except:
-                pass
+            except Exception:
+                pass  # Ignore cleanup errors
             raise e
 
     async def retrieve_context(self, query: str, document_id: str) -> List[Dict[str, Any]]:
@@ -368,19 +389,33 @@ class LightRAGPipeline(LightRAG):
             await self.doc_repo.update_processing_step(doc_id, ProcessingStep.EMBEDDING)
             entity_chroma_ids = [f"{doc_id}::entity::{e.name}" for e in dedup_entities]
             entity_chroma_docs = [f"{e.name} ({e.entity_type}): {e.description}" for e in dedup_entities]
-            
+
             if entity_chroma_ids:
                 entity_embeddings = await embedding_service.generate_embeddings(entity_chroma_docs)
-                
+
                 def _is_valid_embedding(emb) -> bool:
                     return emb is not None and any(v != 0.0 for v in emb)
-                
+
                 has_valid_embeddings = all(_is_valid_embedding(emb) for emb in entity_embeddings) if entity_embeddings else False
-                
+
+                # BR-008: Bắt buộc có user_id trong metadata để multi-tenant isolation
+                user_id_str = str(effective_user_id) if effective_user_id else None
+                if not user_id_str:
+                    logger.warning(f"user_id is missing for code document {doc_id} - this is a security risk")
+                    entity_metadatas = [
+                        {"document_id": str(doc_id), "entity_name": e.name, "user_id": "anonymous"}
+                        for e in dedup_entities
+                    ]
+                else:
+                    entity_metadatas = [
+                        {"document_id": str(doc_id), "entity_name": e.name, "user_id": user_id_str}
+                        for e in dedup_entities
+                    ]
+
                 chroma_client.add_entities(
                     ids=entity_chroma_ids,
                     documents=entity_chroma_docs,
-                    metadatas=[{"document_id": str(doc_id), "entity_name": e.name} for e in dedup_entities],
+                    metadatas=entity_metadatas,
                     embeddings=entity_embeddings if has_valid_embeddings else None,
                 )
             
@@ -430,7 +465,7 @@ class LightRAGPipeline(LightRAG):
             
             try:
                 chroma_client.delete_by_document_id(doc_id)
-            except:
-                pass
-            
+            except Exception:
+                pass  # Ignore cleanup errors
+
             raise e

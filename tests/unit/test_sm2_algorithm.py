@@ -10,7 +10,7 @@ Test coverage:
 import pytest
 import uuid
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.services.sm2_service import SM2Service
 from app.constants import SM2_INITIAL_EASE, SM2_MIN_EASE
@@ -66,7 +66,7 @@ class TestCalculateSM2Update:
         assert result["ease_factor"] == 2.70  # 2.60 + (0.1 - 0 * 0.08)
 
     def test_quality_0_complete_blackout(self):
-        """Quality=0 → reset repetitions, interval=1."""
+        """Quality=0 → reset repetitions, interval=0 (review immediately)."""
         result = SM2Service.calculate_sm2_update(
             current_ease=SM2_INITIAL_EASE,
             current_interval=10,
@@ -75,7 +75,7 @@ class TestCalculateSM2Update:
         )
 
         assert result["repetitions"] == 0
-        assert result["interval"] == 1
+        assert result["interval"] == 0  # CR-001: review ngay lập tức
         # Ease factor giảm
         # new_ease = 2.5 + (0.1 - 5 * (0.08 + 5 * 0.02))
         #          = 2.5 + (0.1 - 5 * 0.18)
@@ -93,7 +93,7 @@ class TestCalculateSM2Update:
         )
 
         assert result["repetitions"] == 0
-        assert result["interval"] == 1
+        assert result["interval"] == 0  # CR-001: review ngay lập tức
         # new_ease = 2.5 + (0.1 - 4 * (0.08 + 4 * 0.02))
         #          = 2.5 + (0.1 - 4 * 0.16)
         #          = 2.5 + (0.1 - 0.64)
@@ -110,7 +110,7 @@ class TestCalculateSM2Update:
         )
 
         assert result["repetitions"] == 0
-        assert result["interval"] == 1
+        assert result["interval"] == 0  # CR-001 fix: review ngay lập tức (interval = 0)
         # new_ease = 2.5 + (0.1 - 3 * (0.08 + 3 * 0.02))
         #          = 2.5 + (0.1 - 3 * 0.14)
         #          = 2.5 + (0.1 - 0.42)

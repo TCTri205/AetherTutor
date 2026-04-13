@@ -77,7 +77,7 @@ class TeamMember(Base, TimestampMixin):
         index=True,
     )
     role: Mapped[TeamRole] = mapped_column(
-        SAEnum(TeamRole, name="team_role_enum", create_constraint=True),
+        SAEnum(TeamRole, name="team_role_enum", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
         default=TeamRole.VIEWER,
         nullable=False,
     )

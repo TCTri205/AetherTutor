@@ -272,11 +272,16 @@ ORDER BY sm2_next_review ASC;
 
 **Violation Impact:** 🔴 **Spaced repetition broken** — Ôn tập không hiệu quả
 
-> [!WARNING]
-> **⚠️ KNOWN DIVERGENCE (CR-001):** Code thực tế (`app/services/sm2_service.py`) dùng `interval = 1` thay vì `0`.
-> Đây là **design choice** (có comment: "review lại sau 1 ngày") nhưng **không khớp SM-2 chuẩn**.
-> **Recommendation:** Fix code → `interval = 0` để khớp spec và tăng 15-20% memory retention.
-> **Tracking Issue:** [srs_analysis_reference.md#CR-001](../references-docs/srs_analysis_reference.md#cr-001-sm-2-interval)
+> [!NOTE]
+> **✅ CR-003 RESOLVED:** Code thực tế (`app/services/chat_service.py`) ĐÃ implement `attempt_count` tracking.
+> Implementation dùng **keyword matching** (đơn giản, đáng tin cậy) thay vì `current_concept` từ LLM JSON.
+> `attempt_count` lưu trong `Conversation.metadata_`, reset khi topic thay đổi, tăng hint_level khi >= 3.
+> Tracking Issue closed.
+
+> [!NOTE]
+> **✅ CR-004 RESOLVED:** Auto backlink suggestions đã được implement cho `POST /notes` và `PATCH /notes/{id}`.
+> Entity linking chạy đồng bộ khi tạo/cập nhật note. Note-to-note backlink suggestions chạy dưới background task (KHÔNG block response).
+> Auto-create links khi confidence >= 0.75 threshold. Tracking Issue closed.
 
 ---
 
@@ -314,10 +319,14 @@ FORMAT PHẢN HỒI JSON (BẮT BUỘC — Structured Output):
 }
 
 **Tracking Rule (Backend-managed — LLM KHÔNG tự update):**
-- `attempt_count` được lưu trong chat session metadata (PostgreSQL).
-- `attempt_count` reset về 0 khi `current_concept` thay đổi (so sánh JSON response field).
-- Backend tự extract `current_concept` từ LLM JSON response → so sánh với concept cũ → quyết định reset hay increment.
+- `attempt_count` được lưu trong `Conversation.metadata_` (PostgreSQL JSON column).
+- `attempt_count` reset về 0 khi user hỏi về topic mới (keyword matching).
+- `attempt_count` increment khi user hỏi cùng topic (dựa trên `last_topics` trong metadata).
+- `hint_level` (1-4) tăng khi `attempt_count >= 3`, giúp LLM đưa ra gợi ý trực tiếp hơn.
 - ⚠️ LLM KHÔNG trực tiếp update database. Backend hoàn toàn quản lý attempt logic.
+
+> [!NOTE]
+> **Implementation Note:** Code thực tế (`app/services/chat_service.py`) dùng **keyword matching** thay vì `current_concept` từ LLM JSON response. Đây là **design choice** — đơn giản hơn, đáng tin cậy hơn, không phụ thuộc structured LLM output cho tracking.
 ```
 
 **Violation Impact:** 🔴 **Mất phương pháp Socratic** — AI trở thành chatbot thường

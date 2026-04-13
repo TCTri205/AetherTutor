@@ -88,11 +88,17 @@ async def test_chat_stream_durability_commits(chat_service, mock_repo, mock_retr
         async for _ in gen:
             pass
 
-    # Verify: 4 commits in total (user msg, pending msg, defensive failed, completed msg)
-    assert mock_repo.session.commit.call_count == 4
+    # Verify: 5 commits in total
+    # 1. User message
+    # 2. Metadata update (attempt_count, hint_level, last_topics)
+    # 3. PENDING assistant message
+    # 4. Defensive FAILED status
+    # 5. COMPLETED status (after successful stream)
+    assert mock_repo.session.commit.call_count == 5
     # Verify order of commits matches durability requirement
     # First commit should be after add_message(role="user")
-    # Second commit should be after add_message(role="assistant")
+    # Second commit should be after metadata update (Conversation)
+    # Third commit should be after add_message(role="assistant", status=PENDING)
 
 @pytest.mark.asyncio
 async def test_chat_stream_disconnect_marks_failed(chat_service, mock_repo, mock_retriever):

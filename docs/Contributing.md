@@ -1,7 +1,8 @@
 # Hướng Dẫn Đóng Góp (Contributing Guide)
 
 > **Document Owner:** AetherTutor Team
-> **Last Updated:** April 5, 2026
+> **Last Updated:** April 12, 2026
+> **Version:** 2.0
 > **Status:** Active
 
 ---
@@ -40,7 +41,7 @@ We pledge to make participation in our project and our community a harassment-fr
 
 **Before submitting a bug report:**
 - Check the [existing issues](https://github.com/aethertutor/aethertutor/issues)
-- Search the [documentation](https://docs.aethertutor.com)
+- Search the [documentation](docs/)
 - Try to reproduce on the latest version
 
 **Bug report template:**
@@ -59,14 +60,11 @@ Steps to reproduce the behavior:
 **Expected behavior**
 A clear and concise description of what you expected to happen.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
-
 **Environment:**
- - OS: [e.g. Windows 10, macOS 13.0, Ubuntu 22.04]
- - Browser: [e.g. Chrome 120, Safari 17]
- - AetherTutor Version: [e.g. 1.0.0]
- - Python Version: [e.g. 3.10.5]
+ - OS: [e.g. Windows 11, macOS 14, Ubuntu 22.04]
+ - Python: [e.g. 3.11.5]
+ - AetherTutor Version: [e.g. v0.3.0]
+ - LLM Provider: [OpenAI / Ollama]
 
 **Additional context**
 Add any other context about the problem here.
@@ -81,7 +79,7 @@ Add any other context about the problem here.
 
 **Before submitting a feature request:**
 - Check [existing feature requests](https://github.com/aethertutor/aethertutor/issues?q=is%3Aissue+label%3Aenhancement)
-- Review the [Roadmap](reports/Roadmap.md) to see if it's already planned
+- Review the [Roadmap](reports/2026-04-07_product_roadmap.md) to see if it's already planned
 
 **Feature request template:**
 
@@ -94,9 +92,6 @@ A clear and concise description of what you want to happen.
 
 **Describe alternatives you've considered**
 A clear and concise description of any alternative solutions or features you've considered.
-
-**Additional context**
-Add any other context, screenshots, or mockups about the feature request here.
 
 **Learning Theory Alignment**
 Which learning theory does this feature support? (e.g., Active Recall, Spaced Repetition, Constructivism)
@@ -112,7 +107,7 @@ How important is this feature to your workflow?
 ### 2.3 Pull Requests
 
 **Before submitting a PR:**
-- Fork the repository and create your branch from `develop`
+- Fork the repository and create your branch from `main`
 - Ensure your code follows the [style guide](#3-coding-standards)
 - Write tests for new functionality
 - Update documentation if needed
@@ -140,16 +135,12 @@ Describe how you tested these changes:
 - [ ] Unit tests added/updated
 - [ ] Integration tests added/updated
 - [ ] Manual testing performed
-- [ ] E2E tests added/updated
 
 **Test instructions:**
 ```bash
 # How to run tests
-pytest tests/test_new_feature.py
+pytest tests/unit/test_new_feature.py -v
 ```
-
-## Screenshots (if applicable)
-Add screenshots or GIFs showing the feature in action
 
 ## Checklist
 - [ ] My code follows the project's style guidelines
@@ -159,7 +150,6 @@ Add screenshots or GIFs showing the feature in action
 - [ ] My changes generate no new warnings
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] New and existing unit tests pass locally with my changes
-- [ ] Any dependent changes have been merged and published
 
 ## Learning Impact (if applicable)
 Which learning theory does this change support?
@@ -186,11 +176,10 @@ Which learning theory does this change support?
 
 ### 3.2 Python Style Guide
 
-We follow [PEP 8](https://peps.python.org/pep-0008/) with these modifications:
+We use **Ruff** for linting and formatting (replaces Black + isort):
 
 ```python
-# Line length: 100 characters (not 79)
-# String quotes: Double quotes for consistency
+# Line length: 100 characters (Ruff default)
 # Type hints: Required for all function signatures
 # Docstrings: Google style
 
@@ -200,7 +189,7 @@ from pydantic import BaseModel
 
 class UserCreateRequest(BaseModel):
     """Request model for user registration."""
-    
+
     email: str
     password: str
     name: str
@@ -215,16 +204,16 @@ async def create_user(
 ) -> User:
     """
     Create a new user account.
-    
+
     Args:
         email: User's email address (must be unique)
         password: User's password (will be hashed)
         name: User's display name
         db_session: Database session
-    
+
     Returns:
         Created User object
-    
+
     Raises:
         DuplicateEmailError: If email already exists
         ValidationError: If input validation fails
@@ -233,10 +222,10 @@ async def create_user(
     existing = await db_session.execute(
         select(User).where(User.email == email)
     )
-    
+
     if existing.scalar_one_or_none():
         raise DuplicateEmailError(email)
-    
+
     # Hash password and create user
     hashed_password = hash_password(password)
     user = User(
@@ -244,33 +233,27 @@ async def create_user(
         password_hash=hashed_password,
         name=name
     )
-    
+
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    
+
     return user
 ```
 
 **Linting & Formatting:**
 ```bash
-# Install dev dependencies
-pip install -r requirements-dev.txt
+# Install ruff
+pip install ruff
 
-# Format code (Black)
-black aethertutor/ tests/
+# Format code
+ruff format app/ tests/
 
-# Sort imports (isort)
-isort aethertutor/ tests/
+# Lint code
+ruff check app/ tests/
 
-# Type checking (mypy)
-mypy aethertutor/
-
-# Linting (ruff)
-ruff check aethertutor/
-
-# All checks (CI hook)
-make lint
+# Fix auto-fixable issues
+ruff check app/ tests/ --fix
 ```
 
 ### 3.3 TypeScript/React Style Guide
@@ -394,34 +377,7 @@ test(agents): add unit tests for Socratic tutor
 chore(deps): update langchain to v0.1.0
 ```
 
-**Git Hook (pre-commit):**
-```yaml
-# .pre-commit-config.yaml
-repos:
-  - repo: https://github.com/psf/black
-    rev: 23.12.1
-    hooks:
-      - id: black
-  
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-  
-  - repo: https://github.com/astral-sh/ruff
-    rev: v0.1.11
-    hooks:
-      - id: ruff
-  
-  - repo: local
-    hooks:
-      - id: pytest-check
-        name: pytest-check
-        entry: pytest tests/unit -x
-        language: system
-        pass_filenames: false
-        always_run: true
-```
+**Scope values:** `auth`, `sm2`, `api`, `rag`, `graph`, `db`, `worker`, `chat`, `quiz`, `flashcard`, `note`, `docs`, `worker`, `deps`, `ui`
 
 ---
 
@@ -432,12 +388,9 @@ repos:
 ```
 main (production)
   ↑
-develop (staging)
-  ↑
 feature/* (new features)
 bugfix/* (bug fixes)
 hotfix/* (urgent fixes)
-release/* (release prep)
 ```
 
 **Branch naming:**
@@ -445,7 +398,6 @@ release/* (release prep)
 feature/RAG-pipeline          # New feature
 bugfix/SM2-calculation        # Bug fix
 hotfix/auth-bypass            # Urgent security fix
-release/v1.0.0               # Release preparation
 ```
 
 ### 4.2 Development Process
@@ -453,14 +405,14 @@ release/v1.0.0               # Release preparation
 ```bash
 # 1. Fork and clone the repository
 git clone https://github.com/YOUR_USERNAME/aethertutor.git
-cd aethertutor
+cd AetherTutor
 
 # 2. Add upstream remote
 git remote add upstream https://github.com/aethertutor/aethertutor.git
 
 # 3. Create feature branch
-git checkout develop
-git pull upstream develop
+git checkout main
+git pull upstream main
 git checkout -b feature/your-feature-name
 
 # 4. Make changes and commit
@@ -469,7 +421,7 @@ git commit -m "feat(scope): description"
 
 # 5. Keep branch up to date
 git fetch upstream
-git rebase upstream/develop
+git rebase upstream/main
 
 # 6. Push to your fork
 git push origin feature/your-feature-name
@@ -481,54 +433,56 @@ git push origin feature/your-feature-name
 
 ```bash
 # Prerequisites
-# - Python 3.10+
-# - Node.js 18+
-# - PostgreSQL 15+
-# - Redis 7+
+# - Python 3.11+
+# - Node.js 20+
+# - PostgreSQL 16
+# - Redis 7
+# - Docker & Docker Compose (optional)
 
-# Backend setup
+# 1. Start data layer (PostgreSQL, Redis, ChromaDB)
+docker compose -f docker-compose.data.yml up -d
+
+# 2. Backend setup
 python -m venv venv
-source venv/bin/activate  # Linux/macOS
 venv\Scripts\activate     # Windows
+source venv/bin/activate  # macOS/Linux
 
 pip install -r requirements.txt
-pip install -r requirements-dev.txt
 
 cp .env.example .env
 # Edit .env with your configuration
 
-# Database setup
-createdb aethertutor_dev
+# Run migrations
 alembic upgrade head
 
-# Run backend
-uvicorn aethertutor.app:create_app --reload --port 8000
+# 3. Start Worker (terminal 1)
+arq app.worker.tasks.WorkerSettings
 
-# Frontend setup
+# 4. Start API (terminal 2)
+uvicorn app.main:app --reload --port 8000
+
+# 5. Frontend setup (terminal 3)
 cd frontend
 npm install
-cp .env.example .env
 npm run dev
-
-# Run tests
-pytest tests/
-npm run test  # frontend
 ```
 
-### 4.4 Docker Development
+**Truy cập Local:**
+- **Frontend (Vite):** `http://localhost:5173`
+- **Backend API:** `http://localhost:8000`
+- **Swagger Docs:** `http://localhost:8000/docs`
+
+### 4.4 Docker Development (Full Stack)
 
 ```bash
 # Start all services
-docker-compose -f docker-compose.dev.yml up -d
+docker compose up --build -d
 
 # View logs
-docker-compose -f docker-compose.dev.yml logs -f api
-
-# Run tests in container
-docker-compose -f docker-compose.dev.yml run api pytest tests/
+docker compose logs -f api
 
 # Stop services
-docker-compose -f docker-compose.dev.yml down
+docker compose down
 ```
 
 ---
@@ -537,65 +491,102 @@ docker-compose -f docker-compose.dev.yml down
 
 ### 5.1 Test Coverage
 
-- **Minimum coverage:** 80%
-- **Critical modules:** 100% (SM-2, auth, payment)
+- **Minimum coverage:** 80% (target)
+- **Critical modules:** 100% (SM-2, auth, data isolation)
 - **No decrease** in coverage after merge
 
-### 5.2 Writing Tests
+**Current status:**
+- **39 test files** trong `tests/`
+- **225+ test functions**
+- **2 lớp tests:** Unit + Integration
+- **CI:** GitHub Actions runs pytest + coverage on every PR
+
+### 5.2 Test Structure
+
+```
+tests/
+├── conftest.py              # Shared fixtures: test_db, async_client, mock_llm
+├── unit/                    # Unit tests (fast, isolated)
+│   ├── test_*.py
+│   └── ...
+├── integration/             # Integration tests (API + DB + Worker)
+│   ├── test_*.py
+│   └── ...
+└── mocks/                   # Mock fixtures
+    ├── mock_llm.py
+    └── ...
+```
+
+### 5.3 Writing Tests
 
 ```python
 # tests/unit/test_example.py
 import pytest
-from aethertutor.example import add_numbers
+from app.services.example import ExampleService
 
 
-class TestAddNumbers:
-    """Tests for add_numbers function."""
-    
-    @pytest.mark.parametrize("a,b,expected", [
-        (1, 2, 3),
-        (0, 0, 0),
-        (-1, 1, 0),
-        (100, 200, 300),
+class TestExampleService:
+    """Tests for ExampleService."""
+
+    async def test_method_success(self):
+        """Should return expected result."""
+        service = ExampleService()
+        result = await service.method("input")
+        assert result.expected_field == "value"
+
+    @pytest.mark.parametrize("input,expected", [
+        ("a", 1),
+        ("b", 2),
+        ("c", 3),
     ])
-    def test_add_numbers(self, a, b, expected):
-        """Should return sum of two numbers."""
-        assert add_numbers(a, b) == expected
-    
-    def test_add_numbers_with_floats(self):
-        """Should handle float inputs."""
-        result = add_numbers(1.5, 2.5)
-        assert result == pytest.approx(4.0)
-    
-    def test_add_numbers_with_invalid_type(self):
-        """Should raise TypeError for invalid inputs."""
-        with pytest.raises(TypeError):
-            add_numbers("1", 2)
+    async def test_method_various_inputs(self, input, expected):
+        """Should handle different input values."""
+        service = ExampleService()
+        result = await service.method(input)
+        assert result == expected
 ```
 
-### 5.3 Running Tests
+### 5.4 Running Tests
 
 ```bash
 # Run all tests
 pytest
 
-# Run with coverage
-pytest --cov=aethertutor --cov-report=html
-
-# Run specific test file
-pytest tests/unit/test_sm2.py
-
-# Run tests matching keyword
-pytest -k "flashcard"
-
-# Run tests in parallel
-pytest -n auto
-
-# Run tests with verbose output
+# Run with verbose output
 pytest -v
 
-# Run tests and stop on first failure
+# Run specific test file
+pytest tests/unit/test_sm2.py -v
+
+# Run tests matching keyword
+pytest -k "flashcard" -v
+
+# Run unit tests only
+pytest tests/unit/ -v
+
+# Run integration tests only
+pytest tests/integration/ -v
+
+# Stop on first failure
 pytest -x
+
+# Coverage report
+pytest --cov=app --cov-report=html --cov-report=term-missing
+```
+
+### 5.5 Pre-Commit Checklist
+
+Trước khi push code:
+
+```bash
+# 1. Lint
+ruff check app/ tests/
+
+# 2. Format
+ruff format app/ tests/
+
+# 3. Run tests
+pytest tests/unit/ tests/integration/ -v
 ```
 
 ---

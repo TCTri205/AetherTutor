@@ -352,6 +352,21 @@ class GraphRepository(BaseRepository[GraphEntity]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_entities_by_names(self, user_id: uuid.UUID, names: List[str]) -> Dict[str, GraphEntity]:
+        """
+        Lookup entities by canonical_name for a given user.
+        Returns a dict mapping entity name -> GraphEntity.
+        """
+        if not names:
+            return {}
+        stmt = select(GraphEntity).where(
+            GraphEntity.user_id == user_id,
+            GraphEntity.canonical_name.in_(names)
+        )
+        result = await self.session.execute(stmt)
+        entities = list(result.scalars().all())
+        return {e.canonical_name: e for e in entities}
+
     async def get_user_relations(self, user_id: uuid.UUID) -> List[GraphRelation]:
         """Lấy tất cả relations của một user (global graph)."""
         stmt = (

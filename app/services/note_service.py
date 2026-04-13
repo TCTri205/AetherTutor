@@ -9,8 +9,11 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 
 from app.repositories.note_repo import NoteRepository, NoteLinkRepository
+from app.repositories.note_entity_link_repo import NoteEntityLinkRepository
 from app.services.backlink_ai_service import BacklinkAIService
 from app.models.note import Note, NoteLink
+from app.models.note_entity_link import NoteEntityLink
+from app.constants import NOTE_LINK_SUGGESTION_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +21,12 @@ logger = logging.getLogger(__name__)
 class NoteService:
     """
     Service for managing notes in the Zettelkasten system.
-    
+
     Provides:
     - Note CRUD operations
     - Backlink suggestions (AI-powered)
     - Note graph generation for visualization
+    - P1-2: Auto entity linking khi tạo note (Zettelkasten)
     """
 
     def __init__(
@@ -30,10 +34,14 @@ class NoteService:
         note_repo: NoteRepository,
         note_link_repo: NoteLinkRepository,
         backlink_ai_service: BacklinkAIService,
+        # P1-2: Thêm dependencies cho auto entity linking
+        note_entity_link_repo: Optional[NoteEntityLinkRepository] = None,
     ):
         self.note_repo = note_repo
         self.note_link_repo = note_link_repo
         self.backlink_ai = backlink_ai_service
+        # P1-2
+        self.note_entity_link_repo = note_entity_link_repo
 
     async def create_note(
         self,
@@ -43,8 +51,13 @@ class NoteService:
         note_type: str = "literature",
         tags: Optional[List[str]] = None,
         metadata: Optional[Dict] = None,
+        auto_link_entities: bool = True,  # P1-2: Flag để bật/tắt auto linking
     ) -> Note:
-        """Create a new atomic note."""
+        """
+        Create a new atomic note.
+        
+        P1-2: Tự động extract và match entities từ graph, tạo links nếu confidence cao.
+        """
         note = await self.note_repo.create(
             user_id=user_id,
             title=title,
@@ -53,13 +66,97 @@ class NoteService:
             tags=tags or [],
             metadata=metadata or {},
         )
+        
+        # P1-2: Auto entity linking
+        if auto_link_entities and self.note_entity_link_repo:
+            try:
+                await self._auto_link_to_entities(note, user_id)
+            except Exception as e:
+                # Log error nhưng không fail note creation
+                logger.warning(f"Auto entity linking failed for note {note.id}: {e}")
+        
         return note
+
+    async def _auto_link_to_entities(self, note: Note, user_id: uuid.UUID) -> List[NoteEntityLink]:
+        """
+        P1-2: Tự động tìm và link note tới graph entities liên quan.
+        
+        Workflow:
+        1. Dùng BacklinkAIService.find_related_entities() để tìm entities phù hợp
+        2. Với entities có confidence >= threshold → auto-create links
+        3. Với entities có confidence thấp → chỉ log, không tạo link
+        
+        Returns:
+            List of NoteEntityLink đã tạo
+        """
+        # Bước 1: Tìm entities liên quan qua AI + embedding
+        related_entities = await self.backlink_ai.find_related_entities(
+            note_content=note.content,
+            user_id=user_id,
+            top_k=10,
+        )
+        
+        if not related_entities:
+            logger.debug(f"No related entities found for note {note.id}")
+            return []
+        
+        # Bước 2: Auto-create links cho entities có confidence cao
+        created_links = []
+        for entity_suggestion in related_entities:
+            if entity_suggestion.confidence < NOTE_LINK_SUGGESTION_THRESHOLD:
+                # Confidence thấp → skip
+                logger.debug(
+                    f"Entity {entity_suggestion.entity_name} confidence "
+                    f"{entity_suggestion.confidence:.2f} < threshold "
+                    f"{NOTE_LINK_SUGGESTION_THRESHOLD}, skipping"
+                )
+                continue
+            
+            # Check nếu link đã tồn tại
+            existing = await self.note_entity_link_repo.get_by_note_and_entity(
+                note_id=note.id,
+                entity_id=entity_suggestion.entity_id
+            )
+            
+            if existing:
+                logger.debug(f"Link already exists: note {note.id} -> entity {entity_suggestion.entity_id}")
+                continue
+            
+            # Tạo link mới
+            try:
+                link = await self.note_entity_link_repo.create(
+                    user_id=user_id,
+                    note_id=note.id,
+                    entity_id=entity_suggestion.entity_id,
+                    match_type="ai_suggested",
+                    confidence=entity_suggestion.confidence,
+                    context=entity_suggestion.context,
+                )
+                created_links.append(link)
+                logger.info(
+                    f"Auto-linked note {note.id} to entity {entity_suggestion.entity_name} "
+                    f"(confidence={entity_suggestion.confidence:.2f})"
+                )
+            except Exception as e:
+                # Lỗi khi tạo link (có thể do unique constraint) → log và tiếp tục
+                logger.warning(f"Failed to create entity link: {e}")
+                continue
+        
+        if created_links:
+            logger.info(
+                f"Created {len(created_links)} auto entity links for note {note.id}"
+            )
+        
+        return created_links
 
     async def get_note(
         self, note_id: uuid.UUID, user_id: uuid.UUID
     ) -> Optional[Note]:
         """Get a single note by ID (with ownership check)."""
-        return await self.note_repo.get(note_id)
+        note = await self.note_repo.get(note_id)
+        if not note or note.user_id != user_id:
+            return None
+        return note
 
     async def get_note_detail(
         self, note_id: uuid.UUID, user_id: uuid.UUID
@@ -94,14 +191,19 @@ class NoteService:
         title: Optional[str] = None,
         content: Optional[str] = None,
         tags: Optional[List[str]] = None,
+        auto_link_entities: bool = True,  # Re-trigger entity linking on update
     ) -> Optional[Note]:
         """
         Update note fields and trigger backlink re-suggestion.
         Returns updated note or None if not found.
+
+        BR-009: Nếu content thay đổi → re-run auto entity linking.
         """
         note = await self.note_repo.get(note_id)
         if not note or note.user_id != user_id:
             return None
+
+        content_changed = content is not None and content != note.content
 
         if title is not None:
             note.title = title
@@ -112,6 +214,13 @@ class NoteService:
 
         await self.note_repo.session.commit()
         await self.note_repo.session.refresh(note)
+
+        # BR-009: Re-run entity linking nếu content thay đổi
+        if content_changed and auto_link_entities and self.note_entity_link_repo:
+            try:
+                await self._auto_link_to_entities(note, user_id)
+            except Exception as e:
+                logger.warning(f"Auto entity linking failed on update for note {note.id}: {e}")
 
         return note
 

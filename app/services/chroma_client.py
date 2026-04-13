@@ -4,7 +4,10 @@ from ..config import settings
 from ..constants import (
     CHROMA_COLLECTION_NAME_CHUNKS,
     CHROMA_COLLECTION_NAME_ENTITIES,
-    CHROMA_HNSW_SPACE
+    CHROMA_HNSW_SPACE,
+    EMBEDDING_DIM_OPENAI,
+    EMBEDDING_MODEL_NAME_OPENAI,
+    EMBEDDING_MODEL_NAME_OLLAMA,
 )
 import logging
 from typing import Optional, List, Dict
@@ -26,11 +29,14 @@ class ChromaClient:
     """
     Enhanced ChromaDB client with connection and collection caching.
     Hỗ trợ cả implicit embeddings (ChromaDB auto) và explicit embeddings (từ embedding_service).
+    
+    BR-008: Tự động kiểm tra embedding_dim để tránh xung đột khi đổi model.
     """
 
     def __init__(self):
         self._client: Optional[chromadb.HttpClient] = None
         self._collections_cache = {}  # Cache collections to avoid repeated get_or_create
+        self._current_embedding_dim: Optional[int] = None  # Track current embedding dimension
 
     @property
     def client(self) -> chromadb.HttpClient:
@@ -52,27 +58,120 @@ class ChromaClient:
         """
         Get or create collection with caching.
         Avoids repeated get_or_create calls.
+        
+        BR-008: Nếu metadata có 'embedding_dim', sẽ validate với collection hiện tại.
+        Nếu dimension khác nhau, tạo collection mới với suffix.
         """
-        if name not in self._collections_cache:
-            try:
-                collection = self.client.get_or_create_collection(
-                    name=name,
-                    metadata=metadata or {"hnsw:space": CHROMA_HNSW_SPACE}
+        # Nếu collection đã cached, kiểm tra dimension match
+        if name in self._collections_cache:
+            cached_collection = self._collections_cache[name]
+            
+            # Nếu có embedding_dim trong metadata, validate
+            if metadata and "embedding_dim" in metadata:
+                requested_dim = metadata["embedding_dim"]
+                existing_dim = cached_collection.metadata.get("embedding_dim")
+                
+                if existing_dim and existing_dim != requested_dim:
+                    # Dimension khác nhau → tạo collection mới
+                    new_name = f"{name}_dim{requested_dim}"
+                    logger.warning(
+                        f"Dimension mismatch for collection '{name}': "
+                        f"existing={existing_dim}, requested={requested_dim}. "
+                        f"Creating new collection: '{new_name}'"
+                    )
+                    # Recursive call với tên mới
+                    return self._get_collection(new_name, metadata)
+            
+            return cached_collection
+
+        # Collection chưa tồn tại → tạo mới
+        try:
+            # Đảm bảo metadata có hnsw:space
+            final_metadata = metadata or {"hnsw:space": CHROMA_HNSW_SPACE}
+            if "hnsw:space" not in final_metadata:
+                final_metadata["hnsw:space"] = CHROMA_HNSW_SPACE
+
+            collection = self.client.get_or_create_collection(
+                name=name,
+                metadata=final_metadata
+            )
+            self._collections_cache[name] = collection
+            
+            # Track current dimension
+            if "embedding_dim" in final_metadata:
+                self._current_embedding_dim = final_metadata["embedding_dim"]
+                logger.info(
+                    f"Collection '{name}' created with embedding_dim={final_metadata['embedding_dim']}"
                 )
-                self._collections_cache[name] = collection
-                logger.debug(f"Collection '{name}' cached")
-            except Exception as e:
-                logger.error(f"Failed to get/create collection '{name}': {e}")
-                raise
-        return self._collections_cache[name]
+            else:
+                logger.info(f"Collection '{name}' created (no embedding_dim specified)")
+            
+            return collection
+        except Exception as e:
+            logger.error(f"Failed to get/create collection '{name}': {e}")
+            raise
+
+    def validate_embedding_dimension(self, embedding: List[float], collection_name: str = "unknown") -> bool:
+        """
+        Validate embedding dimension match với collection hiện tại.
+        
+        Args:
+            embedding: Embedding vector để check
+            collection_name: Tên collection (cho logging)
+            
+        Returns:
+            True nếu dimension match hoặc chưa có dimension track
+            
+        Raises:
+            ValueError nếu dimension không khớp
+        """
+        if not embedding:
+            return True
+            
+        emb_dim = len(embedding)
+        
+        # Nếu chưa track dimension nào, set luôn
+        if self._current_embedding_dim is None:
+            self._current_embedding_dim = emb_dim
+            logger.info(f"Set embedding dimension to {emb_dim} (first embedding for {collection_name})")
+            return True
+        
+        # Check match
+        if self._current_embedding_dim != emb_dim:
+            raise ValueError(
+                f"Embedding dimension mismatch for {collection_name}: "
+                f"expected {self._current_embedding_dim}, got {emb_dim}. "
+                f"Thường do đổi embedding model (OpenAI ↔ Ollama)."
+            )
+        
+        return True
 
     @property
     def chunks_collection(self):
-        return self._get_collection(CHROMA_COLLECTION_NAME_CHUNKS)
+        # BR-008: Thêm embedding_dim vào metadata
+        # Dùng dimension từ embedding service hiện tại (nếu available)
+        from ..services.embedding_service import embedding_service
+        current_dim = embedding_service.dimension if embedding_service else EMBEDDING_DIM_OPENAI
+        
+        metadata = {
+            "hnsw:space": CHROMA_HNSW_SPACE,
+            "embedding_dim": current_dim,
+            "embedding_model": EMBEDDING_MODEL_NAME_OPENAI if current_dim == EMBEDDING_DIM_OPENAI else EMBEDDING_MODEL_NAME_OLLAMA,
+        }
+        return self._get_collection(CHROMA_COLLECTION_NAME_CHUNKS, metadata)
 
     @property
     def entities_collection(self):
-        return self._get_collection(CHROMA_COLLECTION_NAME_ENTITIES)
+        # BR-008: Thêm embedding_dim vào metadata
+        from ..services.embedding_service import embedding_service
+        current_dim = embedding_service.dimension if embedding_service else EMBEDDING_DIM_OPENAI
+        
+        metadata = {
+            "hnsw:space": CHROMA_HNSW_SPACE,
+            "embedding_dim": current_dim,
+            "embedding_model": EMBEDDING_MODEL_NAME_OPENAI if current_dim == EMBEDDING_DIM_OPENAI else EMBEDDING_MODEL_NAME_OLLAMA,
+        }
+        return self._get_collection(CHROMA_COLLECTION_NAME_ENTITIES, metadata)
 
     def add_to_collection(
         self,
@@ -84,28 +183,43 @@ class ChromaClient:
     ):
         """
         Add documents to a collection with optional explicit embeddings.
-        
+
         Nếu embeddings được cung cấp, dùng trực tiếp (không để ChromaDB tự generate).
         Nếu không, ChromaDB sẽ tự tạo embeddings (implicit).
         
+        BR-008: Validate embedding dimension trước khi add.
+
         Args:
             collection: ChromaDB collection object
             ids: Document IDs
             documents: Text documents
             metadatas: Metadata cho mỗi document
             embeddings: Pre-computed embeddings (optional)
+            
+        Raises:
+            ValueError: Nếu embedding dimension không khớp
         """
+        # BR-008: Validate embedding dimension
+        if embeddings:
+            # Check dimension của embedding đầu tiên
+            first_embedding = embeddings[0] if embeddings else None
+            if first_embedding:
+                self.validate_embedding_dimension(
+                    first_embedding,
+                    collection_name=collection.name
+                )
+            logger.debug(f"Using {len(embeddings)} explicit embeddings for {len(ids)} documents")
+
         add_kwargs = {
             "ids": ids,
             "documents": documents,
         }
-        
+
         if metadatas:
             add_kwargs["metadatas"] = metadatas
-        
+
         if embeddings:
             add_kwargs["embeddings"] = embeddings
-            logger.debug(f"Using {len(embeddings)} explicit embeddings for {len(ids)} documents")
 
         try:
             collection.add(**add_kwargs)

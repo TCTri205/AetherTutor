@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any
 import uuid
 import json
 import logging
+from datetime import datetime, timedelta
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,7 +79,7 @@ class FlashcardGenerationService:
 
         if doc.status != DocumentStatus.COMPLETED:
             raise ValueError(
-                f"Document chưa hoàn thành processing (status: {doc.value}). "
+                f"Document chưa hoàn thành processing (status: {doc.status.value}). "
                 f"Flashcard chỉ được sinh từ document đã completed (BR-004)."
             )
 
@@ -105,6 +106,10 @@ class FlashcardGenerationService:
                 back=back,
                 document_id=document_id,
                 source=source,
+                # Known Issue 2: Set SM-2 params explicit thay vì dùng default
+                sm2_ease_factor=2.5,  # Default ease cho auto-generated từ entities
+                sm2_interval=0,  # Chưa review lần nào
+                sm2_repetitions=0,
                 metadata={
                     "entity_id": entity.get("id"),
                     "entity_type": entity.get("entity_type", "concept"),
@@ -234,6 +239,11 @@ Example:
                     front=front,
                     back=back,
                     source="quiz_wrong_answer",
+                    # Known Issue 2: Flashcards từ quiz wrong answers khó hơn → ease thấp hơn, interval ngắn hơn
+                    sm2_ease_factor=2.3,  # Thấp hơn default (2.5) vì đây là kiến thức user chưa nắm vững
+                    sm2_interval=1,  # Interval 1 ngày sau lần review đầu tiên
+                    sm2_repetitions=0,
+                    sm2_next_review=datetime.utcnow() + timedelta(days=1),  # Delay first review 1 ngày để user có thời gian học
                     card_metadata={
                         "quiz_result_id": str(quiz_result_id),
                         "auto_generated": True,

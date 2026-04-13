@@ -10,7 +10,6 @@ Provider được chọn qua config EMBEDDING_PROVIDER.
 
 from typing import List, Optional
 import logging
-import asyncio
 
 from openai import AsyncOpenAI
 from ..config import settings
@@ -166,6 +165,11 @@ class EmbeddingService:
             return await self._generate_ollama_embeddings(texts)
         else:
             logger.error(f"No valid embedding provider available. Current: {self.provider}")
+            logger.warning(
+                "⚠️ CRITICAL: Embedding service unavailable. "
+                "Documents will be ingested WITHOUT embeddings. "
+                "Vector retrieval will NOT work for these documents."
+            )
             return [[0.0] * self.dimension] * len(texts)
 
     async def _generate_openai_embeddings(self, texts: List[str]) -> List[List[float]]:
@@ -178,6 +182,11 @@ class EmbeddingService:
             return [data.embedding for data in response.data]
         except Exception as e:
             logger.error(f"OpenAI embedding failed: {e}")
+            logger.warning(
+                f"⚠️ WARNING: OpenAI embedding failed for {len(texts)} texts. "
+                f"Using zero vectors as fallback. "
+                f"Vector retrieval will NOT work for these embeddings."
+            )
             # Fallback: trả về zero vectors
             return [[0.0] * self.dimension] * len(texts)
 
@@ -191,6 +200,11 @@ class EmbeddingService:
             return [data.embedding for data in response.data]
         except Exception as e:
             logger.error(f"Ollama embedding failed: {e}")
+            logger.warning(
+                f"⚠️ WARNING: Ollama embedding failed for {len(texts)} texts. "
+                f"Using zero vectors as fallback. "
+                f"Vector retrieval will NOT work for these embeddings."
+            )
             # Fallback: trả về zero vectors
             return [[0.0] * self.dimension] * len(texts)
 

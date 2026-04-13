@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 from .config import settings
 
 # Async Engine structure for PostgreSQL
@@ -21,6 +22,21 @@ async_session_factory = AsyncSessionLocal
 
 class Base(DeclarativeBase):
     pass
+
+async def set_current_user_id(session: AsyncSession, user_id: str) -> None:
+    """
+    Set current user_id cho RLS context.
+    
+    BR-001: Phải gọi hàm này trước khi thực hiện query để RLS policies hoạt động.
+    
+    Args:
+        session: Async session
+        user_id: User UUID string
+    """
+    await session.execute(
+        text("SELECT set_config('app.current_user_id', :user_id, true)"),
+        {"user_id": user_id}
+    )
 
 async def get_db():
     async with AsyncSessionLocal() as session:

@@ -6,10 +6,9 @@ and what permission level each team member has.
 """
 import uuid
 from enum import Enum as PyEnum
-from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy import String, Boolean, ForeignKey, Index, Enum as SAEnum
+from sqlalchemy import ForeignKey, Index, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -47,7 +46,7 @@ class SharedResource(Base, TimestampMixin):
         index=True,
     )
     resource_type: Mapped[SharedResourceType] = mapped_column(
-        SAEnum(SharedResourceType, name="shared_resource_type_enum", create_constraint=True),
+        SAEnum(SharedResourceType, name="shared_resource_type_enum", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     resource_id: Mapped[uuid.UUID] = mapped_column(
@@ -59,7 +58,7 @@ class SharedResource(Base, TimestampMixin):
         nullable=False,
     )
     default_permission: Mapped[SharePermission] = mapped_column(
-        SAEnum(SharePermission, name="share_permission_enum", create_constraint=True),
+        SAEnum(SharePermission, name="share_permission_enum", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
         default=SharePermission.VIEW,
         nullable=False,
     )

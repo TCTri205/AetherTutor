@@ -8,13 +8,12 @@ import uuid
 import json
 import logging
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from app.services.llm_service import LLMService
 from app.repositories.note_repo import NoteRepository, NoteLinkRepository
 from app.repositories.graph_repo import GraphRepository
-from app.config import settings
 from app.constants import (
     NOTE_LINK_SUGGESTION_THRESHOLD,
     BACKLINK_AI_MODEL_MAX_TOKENS
@@ -76,14 +75,10 @@ class BacklinkAIService:
     ) -> List[RelatedEntitySuggestion]:
         """
         Find graph entities related to note content.
-        
-        Uses embedding similarity to find entities, then LLM to validate
-        and provide context for the relationship.
+
+        Uses LLM to identify candidate entity names, then looks up
+        actual entity IDs from the user's knowledge graph.
         """
-        # Get entities from user's documents (using graph repo)
-        # Note: This assumes graph_repo has method to get entities by user
-        # For now, we'll use a simplified approach
-        
         prompt = f"""
 Analyze the following note content and identify the key concepts/entities that might relate to a knowledge graph.
 
@@ -113,23 +108,40 @@ Format as JSON array only. No markdown, no explanation.
                 ],
                 max_tokens=BACKLINK_AI_MODEL_MAX_TOKENS,
             )
-            
+
             content = response.choices[0].message.content or "[]"
             suggestions_data = json.loads(content)
-            
+
+            # Extract entity names for lookup
+            entity_names = [item.get("entity_name", "") for item in suggestions_data if item.get("entity_name")]
+
+            # Lookup actual entity IDs from the knowledge graph
+            name_to_entity = await self.graph_repo.get_entities_by_names(user_id, entity_names)
+
             suggestions = []
             for item in suggestions_data[:top_k]:
-                if item.get("confidence", 0) >= NOTE_LINK_SUGGESTION_THRESHOLD:
-                    suggestions.append(RelatedEntitySuggestion(
-                        entity_id=uuid.uuid4(),  # Placeholder - would lookup actual entity
-                        entity_name=item.get("entity_name", "Unknown"),
-                        relation_type=item.get("relation_type", "related_to"),
-                        confidence=item.get("confidence", 0.5),
-                        context=item.get("context", ""),
-                    ))
-            
+                entity_name = item.get("entity_name", "")
+                confidence = item.get("confidence", 0)
+
+                if confidence < NOTE_LINK_SUGGESTION_THRESHOLD:
+                    continue
+
+                # Only include entities that actually exist in the user's graph
+                matched_entity = name_to_entity.get(entity_name)
+                if not matched_entity:
+                    logger.debug(f"Entity '{entity_name}' not found in user's graph, skipping")
+                    continue
+
+                suggestions.append(RelatedEntitySuggestion(
+                    entity_id=matched_entity.id,
+                    entity_name=matched_entity.canonical_name,
+                    relation_type=item.get("relation_type", "related_to"),
+                    confidence=confidence,
+                    context=item.get("context", ""),
+                ))
+
             return suggestions[:top_k]
-            
+
         except Exception as e:
             logger.error(f"Error finding related entities: {e}")
             return []

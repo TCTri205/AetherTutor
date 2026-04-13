@@ -10,21 +10,18 @@ Endpoints:
 - GET /agents/capabilities/{capability} - Get agents by capability
 """
 
-from typing import List
+import uuid
 from fastapi import APIRouter, HTTPException, Depends
-from uuid import UUID
 import logging
 
 from app.schemas.agent import (
-    AgentConfig, AgentInfo, AgentListResponse,
+    AgentInfo, AgentListResponse,
     AgentCreateRequest, AgentUpdateRequest
 )
-from app.core.agents.base_agent import BaseAgent, AgentCapabilities
 from app.core.agents.registry import agent_registry
 from app.core.agents.language_agent import LanguageAgent
 from app.core.agents.math_agent import MathAgent
-from app.dependencies import get_current_user
-from app.models.user import User
+from app.api.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +57,7 @@ async def startup_event():
 @router.get("", response_model=AgentListResponse)
 async def list_agents(
     enabled_only: bool = True,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     List all available agents.
@@ -69,7 +66,11 @@ async def list_agents(
     and configuration schema for UI rendering.
     """
     agents = agent_registry.list_agents(enabled_only=enabled_only)
-    
+
+    # Add enabled status (agents in list are enabled by definition)
+    for agent_info in agents:
+        agent_info["enabled"] = True
+
     return AgentListResponse(
         agents=[AgentInfo(**a) for a in agents],
         total=len(agents)
@@ -79,7 +80,7 @@ async def list_agents(
 @router.get("/{agent_id}", response_model=AgentInfo)
 async def get_agent(
     agent_id: str,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Get detailed information about a specific agent.
@@ -97,13 +98,14 @@ async def get_agent(
     
     info = agent.get_info()
     info["id"] = agent_id
+    info["enabled"] = True  # If agent is in registry and returned, it's enabled
     return AgentInfo(**info)
 
 
 @router.post("", status_code=201)
 async def register_agent(
     request: AgentCreateRequest,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Register a custom agent.
@@ -151,7 +153,7 @@ async def register_agent(
             agent,
             agent_id=request.name,
             enabled=True,
-            metadata={"custom": True, "owner_id": str(current_user.id)}
+            metadata={"custom": True, "owner_id": str(user_id)}
         )
         
         return {
@@ -172,37 +174,48 @@ async def register_agent(
 async def update_agent(
     agent_id: str,
     request: AgentUpdateRequest,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Update agent configuration.
-    
+
     Only works for custom agents registered by the current user.
     """
     agent = agent_registry.get(agent_id)
-    
+
     if not agent:
         raise HTTPException(
             status_code=404,
             detail=f"Agent '{agent_id}' not found"
         )
-    
+
+    # Verify ownership for custom agents
+    meta = agent_registry._metadata.get(agent_id, {})
+    agent_meta = meta.get("metadata", {})
+    if agent_meta.get("custom"):
+        owner_id = agent_meta.get("owner_id")
+        if owner_id and str(user_id) != owner_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Not the agent owner"
+            )
+
     # Apply updates
     if request.description is not None:
         agent.description = request.description
-    
+
     if request.icon is not None:
         agent.icon = request.icon
-    
+
     if request.system_prompt_template is not None:
         agent.set_system_prompt(request.system_prompt_template)
-    
+
     if request.enabled is not None:
         if request.enabled:
             agent_registry.enable(agent_id)
         else:
             agent_registry.disable(agent_id)
-    
+
     return {
         "status": "success",
         "message": f"Agent '{agent_id}' updated successfully"
@@ -212,29 +225,39 @@ async def update_agent(
 @router.delete("/{agent_id}")
 async def unregister_agent(
     agent_id: str,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Unregister a custom agent.
-    
+
     Cannot unregister built-in agents.
     """
     meta = agent_registry._metadata.get(agent_id, {})
-    
-    if meta.get("builtin", False):
+    agent_meta = meta.get("metadata", {})
+
+    if agent_meta.get("builtin", False):
         raise HTTPException(
             status_code=403,
             detail=f"Cannot unregister built-in agent '{agent_id}'"
         )
-    
+
+    # Verify ownership for custom agents
+    if agent_meta.get("custom"):
+        owner_id = agent_meta.get("owner_id")
+        if owner_id and str(user_id) != owner_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Not the agent owner"
+            )
+
     success = agent_registry.unregister(agent_id)
-    
+
     if not success:
         raise HTTPException(
             status_code=404,
             detail=f"Agent '{agent_id}' not found"
         )
-    
+
     return {
         "status": "success",
         "message": f"Agent '{agent_id}' unregistered successfully"
@@ -244,7 +267,7 @@ async def unregister_agent(
 @router.get("/capabilities/{capability}")
 async def get_agents_by_capability(
     capability: str,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Get all agents that have a specific capability.
@@ -272,7 +295,7 @@ async def get_agents_by_capability(
 async def execute_agent(
     agent_id: str,
     input_data: dict,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Execute an agent with the provided input.
@@ -306,7 +329,7 @@ async def execute_agent(
 @router.post("/{agent_id}/health")
 async def health_check_agent(
     agent_id: str,
-    current_user: User = Depends(get_current_user)
+    user_id: uuid.UUID = Depends(get_current_user_id)
 ):
     """
     Check if an agent is healthy and operational.

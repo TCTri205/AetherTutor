@@ -17,15 +17,17 @@ class Conversation(Base, TimestampMixin):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     title: Mapped[str] = mapped_column(String(255), default="Cuộc hội thoại mới")
     last_message_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
+        DateTime(timezone=True),
         default=datetime.utcnow,
         onupdate=datetime.utcnow
     )
+    # BR-006: Metadata cho pedagogical state tracking
+    metadata_: Mapped[dict | None] = mapped_column(JSON, nullable=True, server_default='{}', name="metadata")
 
     # Relationships
     messages: Mapped[list["Message"]] = relationship(
-        "Message", 
-        back_populates="conversation", 
+        "Message",
+        back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="Message.sequence_index"
     )

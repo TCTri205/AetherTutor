@@ -42,6 +42,8 @@ CHROMA_COLLECTION_NAME_ENTITIES = "aethertutor_entities"
 CHROMA_HNSW_SPACE = "cosine"
 
 # Embedding
+EMBEDDING_MODEL_NAME_OPENAI = "text-embedding-3-small"
+EMBEDDING_MODEL_NAME_OLLAMA = "nomic-embed-text"
 EMBEDDING_DIM_OPENAI = 1536  # text-embedding-3-small
 EMBEDDING_DIM_OLLAMA = 768   # nomic-embed-text
 EMBEDDING_BATCH_SIZE = 100   # Max texts per batch request

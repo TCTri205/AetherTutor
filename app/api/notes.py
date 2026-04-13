@@ -17,12 +17,13 @@ Endpoints:
 import uuid
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
 from app.api.dependencies import get_current_user_id
 from app.repositories.note_repo import NoteRepository, NoteLinkRepository
+from app.repositories.note_entity_link_repo import NoteEntityLinkRepository
 from app.repositories.graph_repo import GraphRepository
 from app.services.note_service import NoteService
 from app.services.backlink_ai_service import BacklinkAIService
@@ -51,6 +52,9 @@ def get_note_service(db: AsyncSession) -> NoteService:
     note_repo = NoteRepository(db)
     note_link_repo = NoteLinkRepository(db)
     graph_repo = GraphRepository(db)
+    # P1-2: Tạo repository cho auto entity linking
+    note_entity_link_repo = NoteEntityLinkRepository(db)
+    
     backlink_ai_service = BacklinkAIService(
         llm_service=llm_service,
         note_repo=note_repo,
@@ -61,6 +65,8 @@ def get_note_service(db: AsyncSession) -> NoteService:
         note_repo=note_repo,
         note_link_repo=note_link_repo,
         backlink_ai_service=backlink_ai_service,
+        # P1-2: Inject dependencies
+        note_entity_link_repo=note_entity_link_repo,
     )
 
 
@@ -70,6 +76,7 @@ def get_note_service(db: AsyncSession) -> NoteService:
 async def create_note(
     request: NoteCreate,
     user_id: uuid.UUID = Depends(get_current_user_id),
+    background_tasks: BackgroundTasks = None,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -80,6 +87,9 @@ async def create_note(
     - literature: Ghi chú từ tài liệu/đọc
     - permanent: Kiến thức cốt lõi, dài hạn
     - project: Ghi chú dự án cụ thể
+
+    BR-009: Auto entity linking được trigger khi tạo note.
+    Backlink suggestions được enqueue dưới background task.
     """
     service = get_note_service(db)
 
@@ -92,7 +102,96 @@ async def create_note(
         metadata=request.metadata,
     )
 
+    # BR-009: Enqueue backlink suggestions dưới background (KHÔNG block response)
+    if background_tasks:
+        background_tasks.add_task(
+            _enqueue_backlink_suggestions,
+            note_id=note.id,
+            user_id=user_id,
+        )
+
     return NoteRead.model_validate(note)
+
+
+@router.patch("/{note_id}", response_model=NoteRead)
+async def update_note(
+    note_id: uuid.UUID,
+    request: NoteUpdate,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    background_tasks: BackgroundTasks = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Cập nhật note (title, content, tags, note_type).
+
+    BR-009: Nếu content thay đổi → auto re-run entity linking + backlink suggestions.
+    """
+    service = get_note_service(db)
+
+    note = await service.update_note(
+        note_id=note_id,
+        user_id=user_id,
+        title=request.title,
+        content=request.content,
+        tags=request.tags,
+        note_type=request.note_type,
+    )
+
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    # BR-009: Re-enqueue backlink suggestions nếu content thay đổi
+    if background_tasks and request.content is not None:
+        background_tasks.add_task(
+            _enqueue_backlink_suggestions,
+            note_id=note.id,
+            user_id=user_id,
+        )
+
+    return NoteRead.model_validate(note)
+
+
+async def _enqueue_backlink_suggestions(note_id: uuid.UUID, user_id: uuid.UUID):
+    """
+    Background task: AI-suggest backlinks và auto-create links nếu confidence cao.
+    """
+    try:
+        from app.database import set_current_user_id
+
+        async with AsyncSessionLocal() as session:
+            # Set RLS context for background task
+            await set_current_user_id(session, str(user_id))
+
+            service = get_note_service(session)
+            suggestions = await service.suggest_backlinks(note_id, user_id)
+
+            # Auto-create note-to-note links nếu confidence >= threshold
+            from app.constants import NOTE_LINK_SUGGESTION_THRESHOLD
+            note_link_repo = NoteLinkRepository(session)
+
+            for related_note in suggestions.get("related_notes", []):
+                if related_note.get("confidence", 0) >= NOTE_LINK_SUGGESTION_THRESHOLD:
+                    # Check nếu link đã tồn tại
+                    existing = await note_link_repo.get_link(
+                        source_note_id=note_id,
+                        target_note_id=related_note["note_id"],
+                        user_id=user_id,
+                    )
+                    if not existing:
+                        await note_link_repo.create_link(
+                            user_id=user_id,
+                            source_note_id=note_id,
+                            target_note_id=related_note["note_id"],
+                            context=related_note.get("context", ""),
+                            link_type="ai_suggested",
+                        )
+                        await session.commit()
+                        logger.info(
+                            f"Auto-linked note {note_id} → {related_note['note_id']} "
+                            f"(confidence={related_note['confidence']:.2f})"
+                        )
+    except Exception as e:
+        logger.warning(f"Background backlink suggestion failed for note {note_id}: {e}")
 
 
 @router.get("", response_model=NoteListResponse)
@@ -192,43 +291,14 @@ async def get_note_detail(
     return NoteDetail.model_validate(note)
 
 
-@router.patch("/{note_id}", response_model=NoteRead)
-async def update_note(
-    note_id: uuid.UUID,
-    request: NoteUpdate,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Cập nhật note (title, content, tags, note_type).
-    """
-    service = get_note_service(db)
-
-    note = await service.update_note(
-        note_id=note_id,
-        user_id=user_id,
-        title=request.title,
-        content=request.content,
-        tags=request.tags,
-    )
-
-    if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
-
-    return NoteRead.model_validate(note)
-
-
 @router.delete("/{note_id}", status_code=204)
 async def delete_note(
     note_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Xóa note (cascades to links).
-    """
+    """Xóa note (cascades to links)."""
     service = get_note_service(db)
-
     success = await service.delete_note(note_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Note not found")

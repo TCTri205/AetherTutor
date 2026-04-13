@@ -14,7 +14,7 @@ SM-2 Algorithm:
    - 5: Perfect response
 
 2. Update rules:
-   - Nếu quality < 3: repetitions = 0, interval = 1 (review lại ngay)
+   - Nếu quality < 3: repetitions = 0, interval = 0 (review lại ngay lập tức)
    - Nếu quality >= 3:
      - Nếu repetitions == 0: interval = 1
      - Nếu repetitions == 1: interval = 6
@@ -33,9 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.constants import (
-    SM2_INITIAL_EASE,
     SM2_MIN_EASE,
-    SM2_DEFAULT_QUALITY,
 )
 
 
@@ -75,7 +73,7 @@ class SM2Service:
         if quality < 3:
             # Review không đạt → reset
             new_repetitions = 0
-            new_interval = 1  # Review lại sau 1 ngày
+            new_interval = 0  # Review lại ngay lập tức (interval = 0 → next_review = NOW)
         else:
             # Review thành công
             new_repetitions = current_repetitions + 1

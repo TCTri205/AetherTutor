@@ -200,44 +200,48 @@ class DocumentService:
         """
         Xóa tài liệu khỏi hệ thống hoàn toàn.
 
-        ⚠️ UF-010: Atomic delete — nếu ChromaDB fail thì ROLLBACK PostgreSQL.
-        Thứ tự xóa:
-            1. ChromaDB embeddings (KHÔNG có CASCADE — phải xóa thủ công)
-            2. PostgreSQL records (CASCADE tự động cleanup)
+        ⚠️ Fixed: Đổi thứ tự xóa để giảm rủi ro orphan embeddings.
+        Thứ tự xóa mới:
+            1. PostgreSQL records (trong transaction) → Nếu fail, rollback hoàn toàn
+            2. ChromaDB embeddings (KHÔNG có transaction) → Nếu fail, log để retry sau
             3. Physical file trên disk
 
-        Returns:
-            dict: Thống kê số lượng dữ liệu đã xóa
+        Lý do: ChromaDB không hỗ trợ transaction, nên nếu xóa ChromaDB trước mà SQL fail
+        thì embeddings sẽ mất vĩnh viễn (không rollback được). Đổi lại, nếu SQL xóa thành
+        công mà ChromaDB fail, ta có thể retry cleanup sau.
         """
         doc = await self.repo.get_by_id(doc_id)
         if not doc:
             raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu.")
 
-        # UF-010: Xóa ChromaDB TRƯỚC để đảm bảo atomic — nếu fail thì rollback toàn bộ
-        try:
-            chroma_client.delete_by_document_id(doc_id)
-        except Exception as e:
-            # ChromaDB delete fail → KHÔNG xóa SQL để tránh orphan embeddings
-            logger.error(f"ChromaDB delete failed for document {doc_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Không thể xóa document: cleanup embeddings thất bại. Vui lòng thử lại sau. Lỗi: {str(e)}"
-            )
-
-        # ChromaDB thành công → xóa SQL (CASCADE lo entities, relations, chunks, flashcards, quizzes)
+        # Bước 1: Xóa SQL TRƯỚC (trong transaction)
+        # Nếu fail → rollback hoàn toàn, không mất gì
         try:
             await self.repo.delete(doc_id)
             await self.session.commit()
+            logger.info(f"SQL records deleted for document {doc_id}")
         except Exception as e:
-            # SQL delete fail → ChromaDB đã xóa trước, có thể orphan embeddings
             await self.session.rollback()
             logger.error(f"SQL delete failed for document {doc_id}: {e}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Không thể xóa document: database cleanup thất bại. Embeddings đã bị xóa. Lỗi: {str(e)}"
+                detail=f"Không thể xóa document: database cleanup thất bại. Lỗi: {str(e)}"
             )
 
-        # Xóa file vật lý (không critical — nếu fail thì log và bỏ qua)
+        # Bước 2: Xóa ChromaDB (KHÔNG có transaction)
+        # Nếu fail → log lỗi, có thể retry cleanup sau
+        try:
+            chroma_client.delete_by_document_id(doc_id)
+            logger.info(f"ChromaDB embeddings deleted for document {doc_id}")
+        except Exception as e:
+            # ChromaDB delete fail → SQL đã xóa rồi, log để retry sau
+            logger.error(
+                f"⚠️ ChromaDB cleanup failed for document {doc_id}: {e}. "
+                f"Embeddings may still exist in ChromaDB. Retry cleanup manually."
+            )
+            # KHÔNG raise — SQL đã xóa thành công, document được coi là đã xóa
+
+        # Bước 3: Xóa file vật lý (không critical — nếu fail thì log và bỏ qua)
         if doc.file_path and os.path.exists(doc.file_path):
             try:
                 os.remove(doc.file_path)
