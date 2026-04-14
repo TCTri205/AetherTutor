@@ -175,4 +175,10 @@ export const graphService = {
     const response = await api.post('/graph/mermaid', params);
     return response.data;
   },
+  /**
+   * Update entity position on canvas.
+   */
+  async updateEntityPosition(entityId: string, x: number, y: number): Promise<void> {
+    await api.put(`/graph/entities/${entityId}/position`, { x, y });
+  },
 };

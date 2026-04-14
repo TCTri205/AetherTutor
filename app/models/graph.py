@@ -50,14 +50,23 @@ class GraphEntity(Base, TimestampMixin):
     file_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default={}, server_default="{}")
 
+    # Sprint 18: Code & Media Columns
+    code_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Optimistic Concurrency Control
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+
+    # User-defined layout persistence
+    position_x: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    position_y: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     __table_args__ = (
         Index("idx_graph_entities_user_id", "user_id"),
         Index("idx_graph_entities_tags", "tags", postgresql_using="gin"),
         Index("idx_graph_entities_version", "version"),
         Index("idx_graph_entities_document_id", "document_id"),
+        Index("idx_graph_entities_position", "position_x", "position_y"),
     )
 
     # Relationships
@@ -185,3 +194,39 @@ class GraphEditLog(Base):
         Index("idx_graph_edit_log_document_id", "document_id"),
         Index("idx_graph_edit_log_created_at", "created_at"),
     )
+
+
+class GraphVersion(Base, TimestampMixin):
+    """
+    Snapshot of a graph at a specific point in time.
+    Used for versioning, rollback, and auditing.
+    """
+    __tablename__ = "graph_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    version_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    # Snapshot data (JSON representation of nodes and edges)
+    # This allows full state restoration even if entities are physically deleted.
+    graph_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    
+    # Metadata: what triggered this version?
+    change_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_auto_save: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    __table_args__ = (
+        Index("idx_graph_versions_doc_id", "document_id"),
+        Index("idx_graph_versions_user_id", "user_id"),
+        Index("idx_graph_versions_created_at", "created_at"),
+    )
+
+    # Relationships
+    document = relationship("Document")
+    user = relationship("User")

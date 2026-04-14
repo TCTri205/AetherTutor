@@ -37,6 +37,7 @@ export interface GraphViewProps {
   autoFit?: boolean;
   width?: number;
   height?: number;
+  onNodeDragEnd?: (node: any) => void;
 }
 
 export interface GraphViewRef {
@@ -55,6 +56,7 @@ const GraphView = forwardRef<GraphViewRef, GraphViewProps>((props, ref) => {
     autoFit = true,
     width,
     height,
+    onNodeDragEnd,
   } = props;
 
   const fgRef = useRef<ForceGraphMethods>(null as any);
@@ -269,6 +271,7 @@ const GraphView = forwardRef<GraphViewRef, GraphViewProps>((props, ref) => {
         onNodeHover={handleNodeHover}
         onLinkHover={handleLinkHover}
         onNodeClick={onNodeClick}
+        onNodeDragEnd={onNodeDragEnd}
         cooldownTicks={100}
         d3AlphaDecay={0.02}
         d3VelocityDecay={0.3}

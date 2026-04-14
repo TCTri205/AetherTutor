@@ -229,6 +229,7 @@ class MermaidResponse(BaseModel):
 
 class EntityCreateRequest(BaseModel):
     """Request to create a new graph entity."""
+    document_id: uuid.UUID
     canonical_name: str = Field(..., min_length=1, max_length=255)
     entity_type: str = Field(..., min_length=1, max_length=100)
     description: str = Field(default="")
@@ -268,6 +269,7 @@ class EntityResponse(BaseModel):
 
 class RelationCreateRequest(BaseModel):
     """Request to create a new graph relation."""
+    document_id: uuid.UUID
     source_entity_id: uuid.UUID
     target_entity_id: uuid.UUID
     relation_type: str = Field(..., min_length=1, max_length=150)
@@ -311,3 +313,44 @@ class MergeEntitiesRequest(BaseModel):
     """Request to merge two entities into one."""
     primary_entity_id: uuid.UUID
     secondary_entity_id: uuid.UUID
+
+
+# =========================================================================
+# Sprint 21: Versioning, Layout & Undo/Redo Schemas
+# =========================================================================
+
+class VersionCreateRequest(BaseModel):
+    """Request to create a graph snapshot."""
+    version_name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    change_summary: Optional[str] = None
+    is_auto_save: bool = False
+
+class GraphVersionResponse(BaseModel):
+    """Response for a graph version overview (metadata only)."""
+    id: uuid.UUID
+    document_id: uuid.UUID
+    version_name: str
+    description: Optional[str] = None
+    change_summary: Optional[str] = None
+    is_auto_save: bool
+    created_at: datetime
+
+class UndoResponse(BaseModel):
+    """Response for an undo/redo operation."""
+    success: bool
+    action_reverted: Optional[str] = None
+    message: str
+
+class RelationUpdateRequest(BaseModel):
+    """Request to update a relationship."""
+    expected_version: int
+    relation_type: Optional[str] = None
+    description: Optional[str] = None
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    metadata: Optional[dict] = None
+
+class EntityPositionRequest(BaseModel):
+    """Request to update entity position on canvas."""
+    x: float
+    y: float

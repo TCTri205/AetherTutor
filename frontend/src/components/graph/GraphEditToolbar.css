@@ -1,0 +1,50 @@
+.graph_edit_toolbar {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-sticky);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+}
+
+.graph_edit_toolbar.edit-active {
+  border-color: var(--accent-primary);
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.graph_edit_toolbar .toolbar-divider {
+  background-color: var(--border-primary);
+  opacity: 0.5;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.graph_edit_toolbar {
+  animation: slideIn 0.3s ease-out;
+}
+
+/* Tooltip style simulated with title attribute or custom if needed */
+.graph_edit_toolbar button {
+  transition: all var(--transition-fast);
+}
+
+.graph_edit_toolbar button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.graph_edit_toolbar button:active:not(:disabled) {
+  transform: translateY(0);
+}

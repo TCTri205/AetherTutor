@@ -3,7 +3,8 @@ from sqlalchemy.dialects.postgresql import insert
 import sqlalchemy as sa
 from sqlalchemy import select, delete, or_, func
 from sqlalchemy.orm import selectinload
-from ..models.graph import GraphEntity, GraphRelation, GraphEditLog
+from ..models.graph import GraphEntity, GraphRelation, GraphEditLog, GraphVersion
+from ..models.entity_document import EntityDocument
 from ..core.exceptions import DuplicateResourceError, ResourceNotFoundError
 from typing import List, Dict, Any, Optional
 import uuid
@@ -682,3 +683,267 @@ class GraphRepository(BaseRepository[GraphEntity]):
             # If the main operation rolls back, this log rolls back too.
         except Exception as e:
             logger.warning(f"Failed to log graph edit (non-critical): {e}")
+
+    # =========================================================================
+    # Versioning & Snapshot Management
+    # =========================================================================
+
+    async def create_version(
+        self,
+        document_id: uuid.UUID,
+        user_id: uuid.UUID,
+        version_name: str,
+        description: Optional[str] = None,
+        change_summary: Optional[str] = None,
+        is_auto_save: bool = False,
+    ) -> GraphVersion:
+        """
+        Create a snapshot of the current graph state for a document.
+        """
+        # Fetch all entities and relations for this document
+        entities = await self.get_all_entities(document_id)
+        relations = await self.get_all_relations(document_id)
+
+        # Build graph_data dictionary
+        graph_data = {
+            "entities": [
+                {
+                    "id": str(e.id),
+                    "canonical_name": e.canonical_name,
+                    "display_name": e.display_name,
+                    "entity_type": e.entity_type,
+                    "description": e.description,
+                    "confidence": e.confidence,
+                    "source": e.source,
+                    "tags": e.tags,
+                    "file_path": e.file_path,
+                    "metadata": e.metadata_,
+                    "position_x": e.position_x,
+                    "position_y": e.position_y,
+                }
+                for e in entities
+            ],
+            "relations": [
+                {
+                    "id": str(r.id),
+                    "source_entity_id": str(r.source_entity_id),
+                    "target_entity_id": str(r.target_entity_id),
+                    "relation_type": r.relation_type,
+                    "description": r.description,
+                    "confidence": r.confidence,
+                    "evidence": r.evidence,
+                    "source": r.source,
+                    "is_backlink": r.is_backlink,
+                    "metadata": r.metadata_,
+                }
+                for r in relations
+            ]
+        }
+
+        version = GraphVersion(
+            document_id=document_id,
+            user_id=user_id,
+            version_name=version_name,
+            description=description,
+            graph_data=graph_data,
+            change_summary=change_summary,
+            is_auto_save=is_auto_save,
+        )
+        self.session.add(version)
+        await self.session.flush()
+        await self.session.refresh(version)
+        return version
+
+    async def list_versions(self, document_id: uuid.UUID, limit: int = 20) -> List[GraphVersion]:
+        """List versions for a document ordered by creation date."""
+        stmt = (
+            select(GraphVersion)
+            .where(GraphVersion.document_id == document_id)
+            .order_by(GraphVersion.created_at.desc())
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_version(self, version_id: uuid.UUID) -> Optional[GraphVersion]:
+        """Fetch a specific version by ID."""
+        stmt = select(GraphVersion).where(GraphVersion.id == version_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def restore_version(self, version_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """
+        Restore graph state from a version snapshot.
+        Wipes current state and replaces it with snapshot data.
+        """
+        version = await self.get_version(version_id)
+        if not version or version.user_id != user_id:
+            return False
+
+        doc_id = version.document_id
+        data = version.graph_data
+
+        # Log this destructive action before starting
+        await self.log_edit(
+            user_id=user_id,
+            document_id=doc_id,
+            action="RESTORE",
+            entity_type="graph",
+            new_value={"version_id": str(version_id), "version_name": version.version_name}
+        )
+
+        # 1. Clear current state (Safely)
+        # Using the safe delete method that handles cross-doc entities
+        await self.delete_by_document_id(doc_id)
+
+        # 2. Re-create entities from snapshot
+        # Note: We preserve original IDs from metadata to maintain relation integrity
+        entity_map = {}
+        for ent_data in data.get("entities", []):
+            orig_id = uuid.UUID(ent_data.pop("id"))
+            # Remove SQLAlchemy internal keys if any
+            ent_data.pop("created_at", None)
+            ent_data.pop("updated_at", None)
+            
+            entity = GraphEntity(
+                id=orig_id,
+                user_id=user_id,
+                document_id=doc_id,
+                **ent_data
+            )
+            self.session.add(entity)
+            entity_map[orig_id] = entity
+
+        await self.session.flush()
+
+        # 3. Re-create relations from snapshot
+        for rel_data in data.get("relations", []):
+            rel_data.pop("id", None)
+            rel_data.pop("created_at", None)
+            rel_data.pop("updated_at", None)
+            
+            # Convert string IDs back to UUID
+            rel_data["source_entity_id"] = uuid.UUID(rel_data["source_entity_id"])
+            rel_data["target_entity_id"] = uuid.UUID(rel_data["target_entity_id"])
+
+            relation = GraphRelation(
+                user_id=user_id,
+                document_id=doc_id,
+                **rel_data
+            )
+            self.session.add(relation)
+
+        await self.session.flush()
+        return True
+
+    # =========================================================================
+    # Undo / Redo Logic
+    # =========================================================================
+
+    async def get_latest_edit_log(self, user_id: uuid.UUID, document_id: uuid.UUID) -> Optional[GraphEditLog]:
+        """Get the most recent reversible action for a user/doc."""
+        stmt = (
+            select(GraphEditLog)
+            .where(
+                GraphEditLog.user_id == user_id,
+                GraphEditLog.document_id == document_id,
+                GraphEditLog.action.in_(["CREATE", "UPDATE", "DELETE"])
+            )
+            .order_by(GraphEditLog.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def undo_action(self, log_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """
+        Revert an action recorded in the edit log.
+        """
+        stmt = select(GraphEditLog).where(GraphEditLog.id == log_id, GraphEditLog.user_id == user_id)
+        res = await self.session.execute(stmt)
+        log = res.scalar_one_or_none()
+        
+        if not log:
+            return False
+
+        try:
+            if log.entity_type == "entity":
+                if log.action == "CREATE":
+                    # Undo CREATE -> DELETE
+                    await self.session.execute(delete(GraphEntity).where(GraphEntity.id == log.entity_id))
+                elif log.action == "UPDATE":
+                    # Undo UPDATE -> Restore old_value
+                    if log.old_value:
+                        await self.session.execute(
+                            sa.update(GraphEntity)
+                            .where(GraphEntity.id == log.entity_id)
+                            .values(**log.old_value)
+                        )
+                elif log.action == "DELETE":
+                    # Undo DELETE -> Re-CREATE
+                    if log.old_value:
+                        entity = GraphEntity(**log.old_value)
+                        self.session.add(entity)
+                        
+                        # Re-create junction link if document_id is present
+                        if log.document_id:
+                            junction = EntityDocument(
+                                entity_id=entity.id,
+                                document_id=log.document_id,
+                                confidence=log.old_value.get("confidence", 1.0)
+                            )
+                            self.session.add(junction)
+            
+            elif log.entity_type == "relation":
+                if log.action == "CREATE":
+                    await self.session.execute(delete(GraphRelation).where(GraphRelation.id == log.relation_id))
+                elif log.action == "UPDATE":
+                    if log.old_value:
+                        await self.session.execute(
+                            sa.update(GraphRelation)
+                            .where(GraphRelation.id == log.relation_id)
+                            .values(**log.old_value)
+                        )
+                elif log.action == "DELETE":
+                    if log.old_value:
+                        relation = GraphRelation(**log.old_value)
+                        self.session.add(relation)
+
+            # Mark log as undone or remove it
+            await self.session.execute(delete(GraphEditLog).where(GraphEditLog.id == log.id))
+            await self.session.flush()
+            return True
+        except Exception as e:
+            logger.error(f"Undo failed: {e}")
+            return False
+
+    async def update_relation(
+        self,
+        relation_id: uuid.UUID,
+        updates: Dict[str, Any],
+        expected_version: int,
+        user_id: uuid.UUID,
+    ) -> GraphRelation:
+        """Update a relation with optimistic concurrency control."""
+        stmt = (
+            sa.update(GraphRelation)
+            .where(
+                GraphRelation.id == relation_id,
+                GraphRelation.user_id == user_id,
+                GraphRelation.version == expected_version,
+            )
+            .values(
+                **updates,
+                version=GraphRelation.version + 1,
+            )
+            .returning(GraphRelation)
+        )
+
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        relation = result.scalar_one_or_none()
+
+        if not relation:
+            raise ResourceNotFoundError(resource="Relation", identifier=str(relation_id))
+
+        return relation

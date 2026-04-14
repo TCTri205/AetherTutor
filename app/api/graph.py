@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
+from typing import Optional, List
 from ..database import get_db
 from ..repositories.graph_repo import GraphRepository
 from ..repositories.document_repo import DocumentRepository
@@ -35,6 +35,11 @@ from ..schemas.lightrag import (
     RelationResponse,
     ObsidianImportRequest,
     MergeEntitiesRequest,
+    VersionCreateRequest,
+    GraphVersionResponse,
+    UndoResponse,
+    RelationUpdateRequest,
+    EntityPositionRequest,
 )
 from .dependencies import get_optional_user_id, get_current_user_id
 from ..worker.queue import get_redis_pool
@@ -43,6 +48,18 @@ from ..core.graph_cache import get_graph_cache
 import uuid
 
 router = APIRouter(prefix="/graph", tags=["graph"])
+import logging
+logger = logging.getLogger(__name__)
+
+async def _validate_document_ownership(db: AsyncSession, user_id: uuid.UUID, document_id: uuid.UUID):
+    """Raise 403 if user does not own the document."""
+    doc_repo = DocumentRepository(db)
+    docs = await doc_repo.get_user_documents(user_id)
+    if not any(str(doc.id) == str(document_id) for doc in docs):
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Access denied for document {document_id}"
+        )
 
 @router.post("/query", response_model=QueryResponse)
 async def query_graph(request: QueryRequest, user_id: Optional[uuid.UUID] = Depends(get_optional_user_id), db: AsyncSession = Depends(get_db)):
@@ -938,6 +955,10 @@ async def create_entity(
     # For now, we trust the user_id passed in
 
     try:
+        # 1. Ownership Validation
+        await _validate_document_ownership(db, user_id, request.document_id)
+        document_id = request.document_id
+
         entity_data = {
             "canonical_name": request.canonical_name,
             "entity_type": request.entity_type,
@@ -947,16 +968,6 @@ async def create_entity(
             "tags": request.tags,
             "metadata": request.metadata,
         }
-
-        # We need a document_id — for now, use the first document of the user
-        # In production, this should be explicitly passed or derived
-        from ..repositories.document_repo import DocumentRepository
-        doc_repo = DocumentRepository(db)
-        user_docs = await doc_repo.get_user_documents(user_id)
-        if not user_docs:
-            raise HTTPException(status_code=400, detail="User has no documents. Create a document first.")
-
-        document_id = user_docs[0].id
 
         entity = await graph_repo.create_entity(
             entity_data=entity_data,
@@ -1129,16 +1140,9 @@ async def create_relation(
     graph_repo = GraphRepository(db)
 
     try:
-        # Get document_id from source entity
-        from ..models.graph import GraphEntity as GraphEntityModel
-        from sqlalchemy import select as sa_select
-        result = await db.execute(
-            sa_select(GraphEntityModel.document_id).where(GraphEntityModel.id == request.source_entity_id)
-        )
-        doc_row = result.scalar_one_or_none()
-        if not doc_row:
-            raise HTTPException(status_code=404, detail="Source entity not found")
-        document_id = doc_row
+        # 1. Ownership Validation
+        await _validate_document_ownership(db, user_id, request.document_id)
+        document_id = request.document_id
 
         relation_data = {
             "source_entity_id": request.source_entity_id,
@@ -1232,4 +1236,151 @@ async def delete_relation(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =========================================================================
+# Sprint 21: Interactive Graph Editing - Versions, Undo, Positions
+# =========================================================================
+
+@router.post("/{document_id}/versions", response_model=GraphVersionResponse)
+async def create_graph_version(
+    document_id: uuid.UUID,
+    request: VersionCreateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Tạo một bản sao (snapshot) hiện tại của đồ thị."""
+    await _validate_document_ownership(db, user_id, document_id)
+    repo = GraphRepository(db)
+    version = await repo.create_version(
+        document_id=document_id,
+        user_id=user_id,
+        version_name=request.version_name,
+        description=request.description,
+        change_summary=request.change_summary,
+        is_auto_save=request.is_auto_save
+    )
+    await db.commit()
+    return version
+
+@router.get("/{document_id}/versions", response_model=List[GraphVersionResponse])
+async def list_graph_versions(
+    document_id: uuid.UUID,
+    limit: int = 20,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Lấy danh sách các phiên bản snapshot của đồ thị."""
+    await _validate_document_ownership(db, user_id, document_id)
+    repo = GraphRepository(db)
+    return await repo.list_versions(document_id, limit=limit)
+
+@router.post("/{document_id}/restore/{version_id}", response_model=dict)
+async def restore_graph_version(
+    document_id: uuid.UUID,
+    version_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Khôi phục đồ thị về một phiên bản snapshot đã lưu."""
+    await _validate_document_ownership(db, user_id, document_id)
+    repo = GraphRepository(db)
+    success = await repo.restore_version(version_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Version not found or access denied")
+    await db.commit()
+    return {"status": "success", "message": "Graph restored successfully"}
+
+@router.post("/{document_id}/undo", response_model=UndoResponse)
+async def undo_last_graph_action(
+    document_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Hoàn tác hành động chỉnh sửa gần nhất."""
+    await _validate_document_ownership(db, user_id, document_id)
+    repo = GraphRepository(db)
+    log = await repo.get_latest_edit_log(user_id, document_id)
+    if not log:
+        return UndoResponse(success=False, message="No actions to undo")
+    
+    success = await repo.undo_action(log.id, user_id)
+    if success:
+        await db.commit()
+        return UndoResponse(
+            success=True, 
+            action_reverted=log.action, 
+            message=f"Reverted {log.action} on {log.entity_type}"
+        )
+    return UndoResponse(success=False, message="Undo failed")
+
+@router.put("/entities/{entity_id}/position", response_model=dict)
+async def update_entity_position(
+    entity_id: uuid.UUID,
+    request: EntityPositionRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cập nhật tọa độ (x, y) của thực thể trên bản đồ."""
+    repo = GraphRepository(db)
+    # Update position in DB
+    from ..models.graph import GraphEntity as GraphEntityModel
+    stmt = (
+        sa.update(GraphEntityModel)
+        .where(GraphEntityModel.id == entity_id, GraphEntityModel.user_id == user_id)
+        .values(position_x=request.x, position_y=request.y)
+    )
+    await db.execute(stmt)
+    await db.commit()
+    return {"status": "success"}
+
+@router.put("/relations/{relation_id}", response_model=RelationResponse)
+async def update_graph_relation(
+    relation_id: uuid.UUID,
+    request: RelationUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cập nhật thông tin chi tiết của một quan hệ."""
+    repo = GraphRepository(db)
+    updates = request.model_dump(exclude_unset=True)
+    expected_version = updates.pop("expected_version")
+    
+    # Store old value for undo before update
+    from ..models.graph import GraphRelation as GraphRelationModel
+    relation_stmt = select(GraphRelationModel).where(GraphRelationModel.id == relation_id)
+    res = await db.execute(relation_stmt)
+    old_rel = res.scalar_one_or_none()
+    
+    if not old_rel:
+        raise HTTPException(status_code=404, detail="Relation not found")
+    
+    old_value = {
+        "relation_type": old_rel.relation_type,
+        "description": old_rel.description,
+        "confidence": old_rel.confidence,
+        "metadata": old_rel.metadata_
+    }
+
+    updated_rel = await repo.update_relation(
+        relation_id=relation_id,
+        updates=updates,
+        expected_version=expected_version,
+        user_id=user_id
+    )
+    
+    # Log the edit
+    await repo.log_edit(
+        user_id=user_id,
+        action="UPDATE",
+        entity_type="relation",
+        document_id=updated_rel.document_id,
+        relation_id=relation_id,
+        old_value=old_value,
+        new_value=updates
+    )
+    
+    await db.commit()
+    await db.refresh(updated_rel)
+    return _relation_to_response(updated_rel)
 

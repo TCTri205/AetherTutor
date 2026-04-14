@@ -32,6 +32,11 @@ import MermaidDiagram from '../components/shared/MermaidDiagram';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
+// Sprint 21: Interactive Graph Editing
+import { GraphEditToolbar } from '../components/graph/GraphEditToolbar';
+import { CreateNodeDialog } from '../components/graph/CreateNodeDialog';
+import { undoRedoService } from '../services/UndoRedoService';
+
 // ─── Main Component ────────────────────────────────────────────
 export default function GraphExplorer() {
   const { documentId } = useParams<{ documentId: string }>();
@@ -67,6 +72,13 @@ export default function GraphExplorer() {
   // Modals
   const [activePanel, setActivePanel] = useState<'aliases' | 'multi-query' | null>(null);
 
+  // Sprint 21: Interactive Editing State
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isCreateNodeOpen, setIsCreateNodeOpen] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false); // Backend undo currently supports linear stack
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
   // Fetch graph data
   const fetchGraphData = useCallback(async () => {
     setIsLoading(true);
@@ -93,7 +105,9 @@ export default function GraphExplorer() {
           ...node,
           id: node.id,
           name: node.label || node.id,
-          val: node.val || (node.total_occurrences ? Math.sqrt(node.total_occurrences) * 5 : 5), 
+          val: node.val || (node.total_occurrences ? Math.sqrt(node.total_occurrences) * 5 : 5),
+          x: node.x || node.position_x,
+          y: node.y || node.position_y,
         })),
         links: data.edges.map((edge: any) => ({
           ...edge,
@@ -105,6 +119,11 @@ export default function GraphExplorer() {
       };
 
       setGraphData(formattedData);
+
+      // Update undo availability
+      if (documentId) {
+        setCanUndo(true);
+      }
 
     } catch (err: any) {
       toast.error(`Lỗi tải đồ thị: ${err.message}`);
@@ -300,6 +319,67 @@ export default function GraphExplorer() {
       setIsGeneratingDiagram(false);
     }
   }, [graphData, documentId]);
+
+  // ─── Sprint 21: Edit Handlers ───────────────────────────
+  
+  const handleToggleEditMode = () => {
+    setIsEditMode(!isEditMode);
+    toast.info(isEditMode ? 'Đã tắt chế độ chỉnh sửa' : 'Đã bật chế độ chỉnh sửa');
+  };
+
+  const handleAddNode = (data: { name: string; type: string; description: string }) => {
+    if (!documentId) return;
+    
+    toast.promise(
+      graphService.createEntity({
+        canonical_name: data.name,
+        entity_type: data.type,
+        description: data.description,
+        document_id: documentId
+      } as any),
+      {
+        loading: 'Đang tạo thực thể...',
+        success: () => {
+          fetchGraphData();
+          setCanUndo(true);
+          return `Đã thêm: ${data.name}`;
+        },
+        error: 'Lỗi khi tạo thực thể'
+      }
+    );
+  };
+
+  const handleUndo = async () => {
+    if (!documentId) return;
+    const res = await undoRedoService.undo(documentId);
+    if (res.success) {
+      toast.success(res.message);
+      fetchGraphData();
+    } else {
+      toast.error(res.message);
+      setCanUndo(false);
+    }
+  };
+
+  const handleSaveVersion = async () => {
+    if (!documentId) return;
+    const name = `v${new Date().toLocaleTimeString()}`;
+    try {
+      await undoRedoService.createSnapshot(documentId, name, "Người dùng lưu thủ công");
+      toast.success(`Đã lưu phiên bản: ${name}`);
+    } catch (error) {
+      toast.error('Lỗi khi lưu phiên bản');
+    }
+  };
+
+  const handleNodeDragEnd = async (node: any) => {
+    if (!isEditMode) return;
+    try {
+      await graphService.updateEntityPosition(node.id, node.x, node.y);
+    } catch (error) {
+      console.error('Failed to save node position:', error);
+    }
+  };
 
   return (
     <div className="flex h-full overflow-hidden bg-primary rounded-3xl border border-border-primary relative">
@@ -504,15 +584,42 @@ export default function GraphExplorer() {
 
             {/* Graph View */}
             {activeTab === 'graph' && (
-              <GraphView
-                ref={graphViewRef}
-                data={graphData}
-                onNodeClick={handleNodeClick}
-                isLoading={isLoading}
-                searchQuery={searchQuery}
-                selectedTag={selectedTag}
-                showObsidianBadges={true}
-              />
+              <div className="w-full h-full relative">
+                {/* Sprint 21: Graph Edit Toolbar */}
+                {documentId && (
+                  <GraphEditToolbar
+                    isEditMode={isEditMode}
+                    onToggleEditMode={handleToggleEditMode}
+                    onAddNode={() => setIsCreateNodeOpen(true)}
+                    onUndo={handleUndo}
+                    onSaveVersion={handleSaveVersion}
+                    onShowHistory={() => setIsHistoryOpen(true)}
+                    canUndo={canUndo}
+                    canRedo={false}
+                    selection={selectedEntity}
+                    onDeleteSelection={() => {
+                      if (selectedEntity) {
+                        graphService.deleteEntity(selectedEntity.id, selectedEntity.version).then(() => {
+                          fetchGraphData();
+                          setSelectedEntity(null);
+                          toast.success('Đã xóa thực thể');
+                        });
+                      }
+                    }}
+                  />
+                )}
+
+                <GraphView
+                  ref={graphViewRef}
+                  data={graphData}
+                  onNodeClick={handleNodeClick}
+                  isLoading={isLoading}
+                  searchQuery={searchQuery}
+                  selectedTag={selectedTag}
+                  showObsidianBadges={true}
+                  onNodeDragEnd={handleNodeDragEnd}
+                />
+              </div>
             )}
 
             {/* Diagram View */}
@@ -664,6 +771,13 @@ export default function GraphExplorer() {
           </Card>
         </div>
       )}
+
+      {/* Sprint 21: Create Node Dialog */}
+      <CreateNodeDialog
+        isOpen={isCreateNodeOpen}
+        onClose={() => setIsCreateNodeOpen(false)}
+        onSubmit={handleAddNode}
+      />
     </div>
   );
 }

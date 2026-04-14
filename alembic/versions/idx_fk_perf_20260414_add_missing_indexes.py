@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, None] = None
+revision: str = 'idx_fk_perf_20260414'
+down_revision: Union[str, None] = 'v3w4x5y6z7a8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -37,13 +37,6 @@ def upgrade() -> None:
         unique=False
     )
     
-    # idx_documents_user_id
-    op.create_index(
-        'idx_documents_user_id',
-        'documents',
-        ['user_id'],
-        unique=False
-    )
     
     # idx_graph_relations_document_id
     op.create_index(
@@ -66,6 +59,5 @@ def downgrade() -> None:
     """Remove indexes added in upgrade."""
     op.drop_index('idx_graph_entities_document_id', table_name='graph_entities')
     op.drop_index('idx_graph_relations_document_id', table_name='graph_relations')
-    op.drop_index('idx_documents_user_id', table_name='documents')
     op.drop_index('idx_messages_conversation_id', table_name='messages')
     op.drop_index('idx_conversations_document_id', table_name='conversations')
