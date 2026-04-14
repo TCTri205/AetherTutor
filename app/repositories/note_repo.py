@@ -229,19 +229,39 @@ class NoteLinkRepository(BaseRepository[NoteLink]):
         return True
 
     async def get_note_graph(
-        self, user_id: uuid.UUID
+        self, user_id: uuid.UUID, limit: int = 500
     ) -> Dict[str, Any]:
         """
-        Get the entire note graph for visualization.
+        Get the note graph for visualization with pagination.
+
+        Args:
+            user_id: User UUID
+            limit: Maximum number of nodes to return (prevents memory overload)
+
         Returns: {nodes: [...], edges: [...]}
         """
-        # Get all notes
-        notes_query = select(Note).where(Note.user_id == user_id)
+        # Get limited notes
+        notes_query = (
+            select(Note)
+            .where(Note.user_id == user_id)
+            .limit(limit)
+        )
         notes_result = await self.session.execute(notes_query)
         notes = notes_result.scalars().all()
 
-        # Get all links
-        links_query = select(NoteLink).where(NoteLink.user_id == user_id)
+        if not notes:
+            return {"nodes": [], "edges": []}
+
+        # Only fetch links for the notes we retrieved
+        note_ids = [note.id for note in notes]
+        links_query = (
+            select(NoteLink)
+            .where(
+                NoteLink.user_id == user_id,
+                (NoteLink.source_note_id.in_(note_ids)) |
+                (NoteLink.target_note_id.in_(note_ids))
+            )
+        )
         links_result = await self.session.execute(links_query)
         links = links_result.scalars().all()
 

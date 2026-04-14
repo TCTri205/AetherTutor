@@ -38,6 +38,27 @@ async def lifespan(app: FastAPI):
             "SECURITY: Using default JWT secret. Set JWT_SECRET_KEY in production!"
         )
 
+    # Register built-in agents
+    from app.core.agents.registry import agent_registry
+    from app.core.agents.language_agent import LanguageAgent
+    from app.core.agents.math_agent import MathAgent
+
+    if not agent_registry.is_registered("language_agent"):
+        agent_registry.register(
+            LanguageAgent(),
+            agent_id="language_agent",
+            enabled=True,
+            metadata={"builtin": True}
+        )
+    if not agent_registry.is_registered("math_agent"):
+        agent_registry.register(
+            MathAgent(),
+            agent_id="math_agent",
+            enabled=True,
+            metadata={"builtin": True}
+        )
+    logger.info(f"Registered {agent_registry.count()} agents")
+
     app.state.arq_pool = await get_redis_pool()
     logger.info("ARQ Redis pool initialized")
     yield
@@ -171,6 +192,12 @@ app.include_router(agents.router, prefix="/api/v1")
 app.include_router(collaboration.router, prefix="/api/v1")
 app.include_router(push.router, prefix="/api/v1")
 app.include_router(media.router, prefix="/api/v1")
+
+# Debug router - only in development/debug mode
+if settings.DEBUG:
+    from .api.debug_router import router as debug_router
+    app.include_router(debug_router, prefix="/api/v1")
+    logger.info("Debug endpoints enabled (DEBUG=True)")
 
 # WebSocket router (no /api/v1 prefix for WebSocket)
 app.include_router(ws_router)

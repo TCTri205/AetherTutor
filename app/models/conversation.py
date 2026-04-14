@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import datetime
-from sqlalchemy import String, Text, ForeignKey, Integer, Enum, DateTime, JSON, UniqueConstraint
+from sqlalchemy import String, Text, ForeignKey, Integer, Enum, DateTime, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
 
@@ -32,6 +32,10 @@ class Conversation(Base, TimestampMixin):
         order_by="Message.sequence_index"
     )
 
+    __table_args__ = (
+        Index("idx_conversations_document_id", "document_id"),
+    )
+
     def __repr__(self):
         return f"<Conversation(id={self.id}, title={self.title})>"
 
@@ -59,6 +63,7 @@ class Message(Base, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("conversation_id", "sequence_index", name="uq_conversation_message_seq"),
+        Index("idx_messages_conversation_id", "conversation_id"),
     )
 
     def __repr__(self):

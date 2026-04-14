@@ -78,13 +78,12 @@ class FlashcardRepository(BaseRepository[Flashcard]):
         Get flashcards due for review.
         Cards where sm2_next_review <= NOW()
         """
-        now = datetime.utcnow()
         query = (
             select(Flashcard)
             .where(
                 and_(
                     Flashcard.user_id == user_id,
-                    Flashcard.sm2_next_review <= now
+                    Flashcard.sm2_next_review <= func.now()
                 )
             )
             .order_by(Flashcard.sm2_next_review.asc())
@@ -95,13 +94,12 @@ class FlashcardRepository(BaseRepository[Flashcard]):
 
     async def get_due_cards_count(self, user_id: uuid.UUID) -> int:
         """Count flashcards due for review."""
-        now = datetime.utcnow()
         query = (
             select(func.count(Flashcard.id))
             .where(
                 and_(
                     Flashcard.user_id == user_id,
-                    Flashcard.sm2_next_review <= now
+                    Flashcard.sm2_next_review <= func.now()
                 )
             )
         )

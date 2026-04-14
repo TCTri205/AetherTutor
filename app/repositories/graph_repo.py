@@ -134,6 +134,55 @@ class GraphRepository(BaseRepository[GraphEntity]):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def batch_get_entities_and_relations(
+        self, document_ids: List[uuid.UUID]
+    ) -> tuple[Dict[uuid.UUID, List[GraphEntity]], Dict[uuid.UUID, List[GraphRelation]]]:
+        """
+        Batch fetch entities and relations for multiple documents in single queries.
+
+        Returns:
+            Tuple of (entities_by_doc_id, relations_by_doc_id)
+            Each is a dict mapping document_id to list of entities/relations.
+        """
+        if not document_ids:
+            return {}, {}
+
+        # Single query for all entities
+        entities_stmt = select(GraphEntity).where(
+            GraphEntity.document_id.in_(document_ids)
+        )
+        entities_result = await self.session.execute(entities_stmt)
+        all_entities = entities_result.scalars().all()
+
+        # Single query for all relations with eager loading
+        relations_stmt = (
+            select(GraphRelation)
+            .options(
+                selectinload(GraphRelation.source_entity),
+                selectinload(GraphRelation.target_entity),
+            )
+            .where(GraphRelation.document_id.in_(document_ids))
+        )
+        relations_result = await self.session.execute(relations_stmt)
+        all_relations = relations_result.scalars().all()
+
+        # Group by document_id
+        entities_by_doc = {}
+        for entity in all_entities:
+            doc_id = entity.document_id
+            if doc_id not in entities_by_doc:
+                entities_by_doc[doc_id] = []
+            entities_by_doc[doc_id].append(entity)
+
+        relations_by_doc = {}
+        for relation in all_relations:
+            doc_id = relation.document_id
+            if doc_id not in relations_by_doc:
+                relations_by_doc[doc_id] = []
+            relations_by_doc[doc_id].append(relation)
+
+        return entities_by_doc, relations_by_doc
+
     async def count_entities(self, document_id: uuid.UUID) -> int:
         stmt = select(func.count()).select_from(GraphEntity).where(GraphEntity.document_id == document_id)
         result = await self.session.execute(stmt)

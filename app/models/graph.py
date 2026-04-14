@@ -57,6 +57,7 @@ class GraphEntity(Base, TimestampMixin):
         Index("idx_graph_entities_user_id", "user_id"),
         Index("idx_graph_entities_tags", "tags", postgresql_using="gin"),
         Index("idx_graph_entities_version", "version"),
+        Index("idx_graph_entities_document_id", "document_id"),
     )
 
     # Relationships
@@ -116,6 +117,7 @@ class GraphRelation(Base, TimestampMixin):
         ),
         Index("idx_graph_relations_user_id", "user_id"),
         Index("idx_graph_relations_version", "version"),
+        Index("idx_graph_relations_document_id", "document_id"),
     )
 
     # Relationships

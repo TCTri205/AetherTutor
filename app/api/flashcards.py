@@ -13,13 +13,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 import uuid
+import logging
 
-from ..database import get_db
-from ..api.dependencies import get_current_user_id
-from ..repositories.flashcard_repo import FlashcardRepository
-from ..repositories.study_session_repo import StudySessionRepository
-from ..services.sm2_service import SM2Service
-from ..schemas.flashcard import (
+from app.database import get_db
+from app.api.dependencies import get_current_user_id
+from app.repositories.flashcard_repo import FlashcardRepository
+from app.repositories.study_session_repo import StudySessionRepository
+from app.services.sm2_service import SM2Service
+from app.schemas.flashcard import (
     FlashcardCreate,
     FlashcardRead,
     FlashcardUpdate,
@@ -33,6 +34,7 @@ from ..schemas.flashcard import (
 from ..constants import FLASHCARDS_DUE_DEFAULT_LIMIT
 
 router = APIRouter(prefix="/flashcards", tags=["flashcards"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/due", response_model=FlashcardDueResponse)
@@ -97,7 +99,8 @@ async def review_flashcard(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        logger.exception(f"Flashcard review failed: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("", response_model=FlashcardRead, status_code=201)
@@ -240,9 +243,9 @@ async def generate_flashcards_from_document(
 
     ⚠️ BR-004: Validate document status = COMPLETED trước khi generate.
     """
-    from ..repositories.graph_repo import GraphRepository
-    from ..repositories.document_repo import DocumentRepository
-    from ..services.flashcard_generation_service import FlashcardGenerationService
+    from app.repositories.graph_repo import GraphRepository
+    from app.repositories.document_repo import DocumentRepository
+    from app.services.flashcard_generation_service import FlashcardGenerationService
 
     flashcard_repo = FlashcardRepository(db)
     graph_repo = GraphRepository(db)

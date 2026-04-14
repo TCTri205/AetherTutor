@@ -231,19 +231,22 @@ async def list_notes(
 
 @router.get("/graph", response_model=NoteGraphResponse)
 async def get_note_graph(
+    limit: int = Query(500, ge=1, le=5000, description="Maximum number of nodes"),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Lấy toàn bộ note graph cho Zettelkasten Graph View.
+    Lấy note graph cho Zettelkasten Graph View.
 
     Response dùng cho React Flow visualization:
     - Nodes: Notes (color-coded theo note_type)
     - Edges: NoteLinks (thickness theo link_type)
+
+    Giới hạn: Tối đa 5000 nodes để tránh overload memory.
     """
     service = get_note_service(db)
 
-    graph_data = await service.get_note_graph(user_id)
+    graph_data = await service.get_note_graph(user_id, limit=limit)
     return NoteGraphResponse(**graph_data)
 
 

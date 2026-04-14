@@ -1,7 +1,8 @@
 from datetime import datetime
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
-from ..database import Base
+from ..database import Base  # Re-export Base for models
+
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(

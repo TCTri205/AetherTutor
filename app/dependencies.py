@@ -31,10 +31,3 @@ async def get_rls_session(user_id: uuid.UUID = Depends(get_current_user_id)) -> 
 
 # Backward-compatible alias
 RLSDependency = Annotated[AsyncSession, Depends(get_rls_session)]
-
-async def get_current_user(db: DBDependency):
-    """
-    To be implemented: JWT Auth & User handling.
-    For Phase 1 foundation, this is a placeholder.
-    """
-    return None

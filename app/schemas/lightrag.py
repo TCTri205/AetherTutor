@@ -295,3 +295,19 @@ class ConflictErrorResponse(BaseModel):
     message: str
     current_version: int
     expected_version: int
+
+
+# =============================================
+# Obsidian Import & Entity Merge Schemas
+# (Moved from app/api/graph.py for consistency)
+# =============================================
+
+class ObsidianImportRequest(BaseModel):
+    """Request to import Obsidian vault."""
+    vault_path: str
+
+
+class MergeEntitiesRequest(BaseModel):
+    """Request to merge two entities into one."""
+    primary_entity_id: uuid.UUID
+    secondary_entity_id: uuid.UUID

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db, get_current_user_id
@@ -23,22 +23,6 @@ from app.core.exceptions import AppError
 router = APIRouter(prefix="/topics", tags=["topics"])
 
 
-def _topic_response(topic) -> TopicResponse:
-    return TopicResponse(
-        id=str(topic.id),
-        user_id=str(topic.user_id),
-        name=topic.name,
-        slug=topic.slug,
-        description=topic.description,
-        color=topic.color,
-        icon=topic.icon,
-        is_archived=topic.is_archived,
-        sort_order=topic.sort_order,
-        created_at=str(topic.created_at),
-        updated_at=str(topic.updated_at),
-    )
-
-
 @router.post(
     "",
     response_model=TopicResponse,
@@ -46,7 +30,6 @@ def _topic_response(topic) -> TopicResponse:
     summary="Create a new topic",
 )
 async def create_topic(
-    request: Request,
     body: TopicCreateRequest,
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -68,7 +51,7 @@ async def create_topic(
             error_code="TOPIC_CREATE_FAILED",
         )
 
-    return _topic_response(topic)
+    return TopicResponse.model_validate(topic)
 
 
 @router.get(
@@ -77,7 +60,6 @@ async def create_topic(
     summary="List all topics for current user",
 )
 async def list_topics(
-    request: Request,
     limit: int = 100,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
@@ -89,7 +71,7 @@ async def list_topics(
     total = await service.topic_repo.count_by_user(user_id)
 
     return TopicListResponse(
-        topics=[_topic_response(t) for t in topics],
+        topics=[TopicResponse.model_validate(t) for t in topics],
         total=total,
     )
 
@@ -101,8 +83,7 @@ async def list_topics(
 )
 async def get_topic(
     topic_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Get a specific topic by ID."""
@@ -114,7 +95,7 @@ async def get_topic(
             status_code=status.HTTP_404_NOT_FOUND,
             error_code="TOPIC_NOT_FOUND",
         )
-    return _topic_response(topic)
+    return TopicResponse.model_validate(topic)
 
 
 @router.put(
@@ -124,8 +105,7 @@ async def get_topic(
 )
 async def update_topic(
     topic_id: str,
-    request: Request,
-    body: TopicUpdateRequest,
+        body: TopicUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
@@ -149,7 +129,7 @@ async def update_topic(
             error_code="TOPIC_NOT_FOUND",
         )
 
-    return _topic_response(topic)
+    return TopicResponse.model_validate(topic)
 
 
 @router.post(
@@ -159,8 +139,7 @@ async def update_topic(
 )
 async def archive_topic(
     topic_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Archive a topic (soft delete)."""
@@ -172,7 +151,7 @@ async def archive_topic(
             status_code=status.HTTP_404_NOT_FOUND,
             error_code="TOPIC_NOT_FOUND",
         )
-    return _topic_response(topic)
+    return TopicResponse.model_validate(topic)
 
 
 @router.delete(
@@ -182,8 +161,7 @@ async def archive_topic(
 )
 async def delete_topic(
     topic_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Delete a topic. Junction rows cascade, documents/notes remain."""
@@ -208,8 +186,7 @@ async def delete_topic(
 async def add_document(
     topic_id: str,
     body: AddDocumentRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Add a document to this topic."""
@@ -238,8 +215,7 @@ async def add_document(
 async def remove_document(
     topic_id: str,
     document_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Remove a document from this topic."""
@@ -264,8 +240,7 @@ async def remove_document(
 async def add_note(
     topic_id: str,
     body: AddNoteRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Add a note to this topic."""
@@ -291,8 +266,7 @@ async def add_note(
 async def remove_note(
     topic_id: str,
     note_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """Remove a note from this topic."""
@@ -315,8 +289,7 @@ async def remove_note(
 )
 async def get_topic_documents(
     topic_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """List all documents in this topic."""
@@ -343,8 +316,7 @@ async def get_topic_documents(
 )
 async def get_topic_notes(
     topic_id: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     """List all notes in this topic."""

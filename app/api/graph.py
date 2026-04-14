@@ -33,12 +33,13 @@ from ..schemas.lightrag import (
     EntityResponse,
     RelationCreateRequest,
     RelationResponse,
+    ObsidianImportRequest,
+    MergeEntitiesRequest,
 )
 from .dependencies import get_optional_user_id, get_current_user_id
 from ..worker.queue import get_redis_pool
 from ..core.exceptions import DuplicateResourceError, ResourceNotFoundError
 from ..core.graph_cache import get_graph_cache
-from pydantic import BaseModel
 import uuid
 
 router = APIRouter(prefix="/graph", tags=["graph"])
@@ -271,13 +272,16 @@ async def get_global_graph(
             scope=request.scope,
         )
 
+    # Batch fetch entities and relations (2 queries total instead of N*2)
+    entities_by_doc, relations_by_doc = await graph_repo.batch_get_entities_and_relations(doc_ids)
+
     # Aggregate entities across documents
     all_entities = {}  # canonical_name -> {entity_type, description, docs[], confidences[]}
     all_relations = {}  # (source, target, relation_type) -> {description, docs[]}
 
     for doc_id in doc_ids:
-        # Get entities
-        entities = await graph_repo.get_all_entities(doc_id)
+        # Get entities from batch result
+        entities = entities_by_doc.get(doc_id, [])
         for entity in entities:
             if entity.confidence < request.min_confidence:
                 continue
@@ -291,7 +295,7 @@ async def get_global_graph(
                     "confidences": [],
                     "occurrences": 0,
                 }
-            
+
             all_entities[name]["documents"].append(str(doc_id))
             all_entities[name]["confidences"].append(entity.confidence)
             all_entities[name]["occurrences"] += 1
@@ -303,8 +307,8 @@ async def get_global_graph(
                     all_entities[name]["description"] = entity.description
                     all_entities[name]["best_confidence"] = entity.confidence
 
-        # Get relations
-        relations = await graph_repo.get_all_relations(doc_id)
+        # Get relations from batch result
+        relations = relations_by_doc.get(doc_id, [])
         for rel in relations:
             key = (rel.source_entity.canonical_name, rel.target_entity.canonical_name, rel.relation_type)
             if key not in all_relations:
@@ -597,9 +601,6 @@ async def get_global_entities(
 # Obsidian Integration APIs
 # =============================================
 
-class ObsidianImportRequest(BaseModel):
-    vault_path: str
-
 @router.post("/import/obsidian")
 async def import_obsidian_vault(
     request: ObsidianImportRequest,
@@ -696,9 +697,6 @@ async def get_potential_duplicate_entities(
     service = EntityResolutionService(db)
     return await service.get_potential_duplicates(user_id)
 
-class MergeEntitiesRequest(BaseModel):
-    primary_entity_id: uuid.UUID
-    secondary_entity_id: uuid.UUID
 
 @router.post("/entities/merge")
 async def merge_entities(

@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Text, Enum, ForeignKey
+from sqlalchemy import String, Text, Enum, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
@@ -67,6 +67,10 @@ class Document(Base, TimestampMixin):
     )
     transcripts = relationship(
         "Transcript", back_populates="document", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("idx_documents_user_id", "user_id"),
     )
 
     def __repr__(self):

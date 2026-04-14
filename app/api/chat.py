@@ -10,7 +10,6 @@ from ..repositories.chat_repo import ChatRepository
 from ..repositories.graph_repo import GraphRepository
 from ..repositories.document_repo import DocumentRepository
 from ..core.retriever import Retriever
-from ..services.chat_service import ChatService
 from ..services.cross_verification_service import cross_verification_service
 from ..schemas.chat import ChatStreamRequest, ConversationRead, MessageRead, ConversationDetail, MessageResponse, MultiDocChatRequest, MultiDocChatResponse
 from ..constants import RATE_LIMIT_CONVERSATION_CREATE, RATE_LIMIT_CHAT_STREAM
@@ -19,12 +18,6 @@ from .dependencies import get_optional_user_id, get_current_user_id
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
-
-async def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
-    chat_repo = ChatRepository(db)
-    graph_repo = GraphRepository(db)
-    retriever = Retriever(graph_repo)
-    return ChatService(chat_repo, retriever)
 
 @router.post("/conversations/{document_id}", response_model=ConversationRead)
 @limiter.limit(RATE_LIMIT_CONVERSATION_CREATE)
@@ -173,7 +166,7 @@ async def delete_conversation(
     return {"status": "deleted"}
 
 # --- Legacy Compatibility ---
-@router.post("/socratic", response_model=MessageResponse)
+@router.post("/socratic", response_model=MessageResponse, deprecated=True)
 async def socratic_chat_legacy(
     document_id: str,
     message: str = Body(..., embed=True),
@@ -182,14 +175,14 @@ async def socratic_chat_legacy(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Endpoint cũ để giữ tương thích ngược.
-    Không hỗ trợ stream, trả về kết quả cuối cùng.
+    [DEPRECATED] Endpoint cũ để giữ tương thích ngược.
+    Endpoint này sẽ bị xóa trong phiên bản tương lai.
+    Vui lòng chuyển sang POST /chat/stream.
     """
-    chat_repo = ChatRepository(db)
+    logger.warning("Deprecated socratic_chat_legacy endpoint called")
     graph_repo = GraphRepository(db)
     retriever = Retriever(graph_repo)
 
-    doc_uuid = uuid.UUID(document_id)
     context, _ = await retriever.retrieve(message, document_id, user_id=user_id)
     context_str = "\n".join([f"[{c['type']}] {c['content']}" for c in context])
 

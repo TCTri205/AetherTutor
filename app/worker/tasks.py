@@ -1,5 +1,6 @@
 import uuid
 import logging
+import asyncio
 from pathlib import Path
 from typing import Any
 from sqlalchemy import select, func
@@ -72,7 +73,7 @@ async def cleanup_partial_document_data(
     # Bước 2: Xóa embeddings trong ChromaDB
     # Nếu fail, raise exception để caller biết (không silent như trước)
     try:
-        chroma_client.delete_by_document_id(doc_id)
+        await asyncio.to_thread(chroma_client.delete_by_document_id, doc_id)
     except Exception as e:
         logger.error(f"ChromaDB cleanup failed for document {doc_id}: {e}")
         # Rollback session on ChromaDB failure to avoid half-committed state
@@ -203,7 +204,7 @@ async def process_document_task(ctx: Any, doc_id_str: str):
             else:
                 # Document file: use PDF extractor
                 logger.info(f"Đang trích xuất văn bản từ PDF: {doc.file_path}")
-                text = pdf_extractor.extract_text(doc.file_path)
+                text = await asyncio.to_thread(pdf_extractor.extract_text, doc.file_path)
                 
                 if not text:
                     raise PermanentProcessingError("Không thể trích xuất văn bản có nghĩa từ file PDF.")

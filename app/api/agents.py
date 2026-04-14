@@ -19,39 +19,11 @@ from app.schemas.agent import (
     AgentCreateRequest, AgentUpdateRequest
 )
 from app.core.agents.registry import agent_registry
-from app.core.agents.language_agent import LanguageAgent
-from app.core.agents.math_agent import MathAgent
 from app.api.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
-
-
-def _auto_register_builtin_agents():
-    """Auto-register built-in agents if not already registered."""
-    if not agent_registry.is_registered("language_agent"):
-        agent_registry.register(
-            LanguageAgent(),
-            agent_id="language_agent",
-            enabled=True,
-            metadata={"builtin": True}
-        )
-    
-    if not agent_registry.is_registered("math_agent"):
-        agent_registry.register(
-            MathAgent(),
-            agent_id="math_agent",
-            enabled=True,
-            metadata={"builtin": True}
-        )
-
-
-@router.on_event("startup")
-async def startup_event():
-    """Register built-in agents on startup."""
-    _auto_register_builtin_agents()
-    logger.info(f"Registered {agent_registry.count()} agents")
 
 
 @router.get("", response_model=AgentListResponse)
@@ -120,35 +92,27 @@ async def register_agent(
             detail=f"Agent '{request.name}' already registered"
         )
     
-    # Create a generic agent instance from config
-    # Note: For custom agents, you'd typically have a factory or plugin system
-    # For now, we'll create a placeholder agent
+    # Create a custom agent instance using factory pattern
+    from app.core.agents.custom_agent import CustomAgent
+    from app.core.agents.base_agent import AgentCapabilities
+
+    caps = []
+    for cap_str in request.capabilities:
+        try:
+            caps.append(AgentCapabilities(cap_str))
+        except ValueError:
+            pass
+
+    agent = CustomAgent(
+        name=request.name,
+        description=request.description,
+        system_prompt=request.system_prompt_template,
+        capabilities=caps,
+        icon=request.icon,
+        custom_config=request.custom_config,
+    )
+
     try:
-        from app.core.agents.base_agent import BaseAgent
-        
-        class CustomAgent(BaseAgent):
-            name = request.name
-            version = "1.0.0"
-            description = request.description
-            icon = request.icon
-            
-            def _default_system_prompt(self) -> str:
-                return request.system_prompt_template
-            
-            async def execute(self, **kwargs) -> dict:
-                return {"status": "success", "message": "Custom agent executed"}
-            
-            def get_capabilities(self):
-                from app.core.agents.base_agent import AgentCapabilities
-                caps = []
-                for cap_str in request.capabilities:
-                    try:
-                        caps.append(AgentCapabilities(cap_str))
-                    except ValueError:
-                        pass
-                return caps
-        
-        agent = CustomAgent(custom_config=request.custom_config)
         agent_id = agent_registry.register(
             agent,
             agent_id=request.name,
@@ -166,7 +130,7 @@ async def register_agent(
         logger.error(f"Failed to register agent: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to register agent: {str(e)}"
+            detail="Failed to register agent"
         )
 
 
@@ -322,7 +286,7 @@ async def execute_agent(
         logger.error(f"Agent {agent_id} execution failed: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Agent execution failed: {str(e)}"
+            detail="Agent execution failed"
         )
 
 

@@ -305,15 +305,15 @@ class NoteService:
         return suggestions.dict()
 
     async def get_note_graph(
-        self, user_id: uuid.UUID
+        self, user_id: uuid.UUID, limit: int = 500
     ) -> Dict[str, Any]:
         """
-        Get the entire note graph for Zettelkasten visualization.
-        
+        Get the note graph for Zettelkasten visualization with pagination.
+
         Returns:
         {
             "nodes": [{"id", "title", "note_type", "tags", "created_at"}],
             "edges": [{"source", "target", "link_type", "context"}]
         }
         """
-        return await self.note_link_repo.get_note_graph(user_id)
+        return await self.note_link_repo.get_note_graph(user_id, limit=limit)

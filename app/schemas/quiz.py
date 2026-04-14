@@ -81,8 +81,7 @@ class QuizResponse(BaseModel):
     questions: List[QuizQuestionResponse]
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class QuizAnswerResponse(BaseModel):
@@ -118,8 +117,7 @@ class QuizResultResponse(BaseModel):
     weak_areas: List[WeakAreaResponse]
     completed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class QuizStatsResponse(BaseModel):
@@ -147,8 +145,7 @@ class QuizListItemResponse(BaseModel):
     difficulty: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class QuizResultListItemResponse(BaseModel):
@@ -161,8 +158,7 @@ class QuizResultListItemResponse(BaseModel):
     total_questions: int
     completed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ===== Flashcard Conversion =====
